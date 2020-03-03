@@ -1,0 +1,241 @@
+TITLE:: Bacalao
+summary:: Somewhat fishy live cod(e) extensions to SuperCollider
+categories:: Live Coding
+related:: Classes/NodeProxy, Classes/Ndef, Classes/PatternProxy, Classes/Pdef, Classes/VSTPlugin, Classes/ChordSymbol
+
+DESCRIPTION::
+
+Bacalao is a live coding "domain specific language". You can use
+Bacalao's shortened notation to quickly experiment with Node- and
+especially Pattern-proxies (which it uses under the covers).
+
+image::Atlantic_cod.jpg#Transatlantic Live Cod(e)::
+
+Bacalao was inspired by
+link::https://tidalcycles.org/##TidalCycles::, and adopts a similar
+syntax for certain things, such as its phrase definitions.  Similarly
+to Tidal, Bacalao allows patterns/phrases (including timing) to be
+described in a compact notation.  It likewise supports sub-phrases
+with repeats and holds (adjustments of note or sub-phrase relative
+duration).  Unlike Tidal, it does not require Haskell or any other
+language. It is coded entirely in SuperCollider (sclang), building on
+top of link::Tutorials/A-Practical-Guide/PG_06c_Composition_of_Patterns##Event patterns::,
+link::Classes/NodeProxy:: and link::Classes/PatternProxy::.
+It also uses the
+link::https://git.iem.at/pd/vstplugin##VSTPlugin:: extension to play
+VST instruments natively inside SuperCollider, allowing their output
+to be processed by SC server effects. It also uses the
+link::https://github.com/triss/ChordSymbol##ChordSymbol:: Quark (when
+installed) to allow chord notation in note patterns.
+
+Beyond live coding and quick experimentation with looping patterns
+(which is mainly what it does right now), the idea is to make a language
+that can eventually be used to prototype or author the audio side of
+complex multimedia works, helping to manage resources, handle events
+and perform sequencing, spatialize sound sources, respond to external
+data/parameter input streams, ...we'll see...  (The Atlantic cod were
+pretty ambitious, too, until they got nearly wiped out in the early
+1990s.)
+
+From the user's point of view, the Bacalao class really only has one
+method of interest: link::#-p::, which plays Event patterns, typically
+using sequences of notes (or degrees in a scale), defined using the
+teletype::deg:: link::#Event parameter shortcuts#shortcut:: (or
+teletype::note:: or teletype::midinote::).
+
+subsection:: Etymology
+
+Bacalao (the Spanish word for
+"link::https://en.wikipedia.org/wiki/Atlantic_cod##cod::"), is simply
+the words "live code" written using one-third of the letters (or, even
+better: it's "live coding" compressed by nearly 75%)...and then
+translated into Spanish to make it sound exotic (and salty!).  In the
+translation process, however, it loses nearly all of those letter
+savings...  (This may or may not be a metaphor for the gains and
+losses you may experience using the language itself.)
+
+Bacalao (or Bakalao, Vacalao, or one of numerous other spellings) also
+refers to a repetitive, aggressive
+link::https://es.wikipedia.org/wiki/Bakalao##electronic music style:: that
+emerged "Made in Spain" in the mid-1980s, but trust me, that is
+purely coincidental...  It is emphasis::also:: coincidental (or is
+it?) that the Atlantic cod were nearly wiped out around the same time
+Bakalao music was reaching its prime.  Fortunately, the
+emphasis::fish:: (at least) seem to be making a comeback...let's
+leave it at that.
+
+subsection:: Example
+
+A quick cod(e) example, before jumping in:
+
+code::
+(
+// Boot the Server and create our Bacalao instance to work with
+s.boot;
+b = Bacalao();
+b.tempo = 0.4;
+)
+
+// Get a simple loop going, using default SynthDef
+b.p(\simple, deg"0 1 2 3");
+
+// Add a second def, sort of a bass line
+b.p(\bass, deg"[-7@3 [~ -8]]@2");
+
+// Add a third definition to accompany the first
+b.p(\accompaniment, deg"[[0 2 4]*4]" << amp"0.05");
+
+// Modify (redefine) the accompaniment
+b.p(\accompaniment, deg"[~ [0 2 4]*4]" << amp"0.05");
+
+// Fade out the accompaniment over six beats (a bar and a half)
+b.clear(\accompaniment, 6);
+
+// Fade out all remaining defs over eight beats (two bars)
+[\simple, \bass].do(b.clear(_, 8));
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+Create a Bacalao instance, to which live coding commands can be
+issued.
+
+argument:: shareClock
+The (link::Classes/TempoClock::) that this instance should
+share. Alternatively, you may pass another Bacalao instance, and its
+clock will be shared.  If not specified, then TempoClock.default will
+be used.
+
+argument:: server
+The link::Classes/Server:: to use for this instance.  If not
+specified, then Server.default will be used.
+
+argument:: verbose
+Should the new instance print out debugging information?  Default
+value (if not specified) is true.
+
+argument:: quant
+What clock quantization should pattern definitions use when not specified explicitly?
+Default value (if not specified) is nil.
+
+INSTANCEMETHODS::
+
+METHOD:: p
+
+Make a named pattern definition, using an Event pattern. The 'p' could be
+considered "pattern" or "play". Sets a looping pattern playing on the
+named NodeProxy.
+
+argument:: defName
+A name/label for the definition. If not a link::Classes/Symbol::, it will
+be converted to one. An link::Classes/Association:: may be used, in the form
+code::defName -> sourceIndex::. This will apply the definition to that
+(integer) sub-source index. If no sourceIndex is specified, then the main
+(0) source will be set, and all other sub-sources will be removed.
+
+argument:: pattern
+The Event pattern (link::Classes/Pbind::) to play. Typically this will be
+created by several patterns joined by link::Classes/PtimeChain:: or
+link::Classes/Pchain::. Sending nil as the pattern stops playback of
+the named definition/slot.
+
+argument:: dur
+Optional duration (defaults to 0) for the pattern.
+Duration of 0 means use "natural" loop time; whatever the pattern produces.
+Durations > 0 will truncate or extend the pattern as needed to produce
+exactly the requested duration. By default (if quant is unspecified) the
+quantization will be a multiple of the duration ([dur, 0]).
+
+argument:: quant
+The optional link::Classes/Quant:: to use. This is useful if you want to
+start the pattern on an off-beat: for example, you might set quant to [4,-1],
+which would start the pattern one bar before the next bar divisible by four.
+
+argument:: role
+The optional link::Reference/NodeProxy_roles##NodeProxy role:: to use.
+This can be set automatically for you if you use the synonym methods
+link::#-pset:: or link::#-xset::.
+
+
+EXAMPLES::
+
+code::
+(
+// Complete self-contained example, with a sequence of commands being sent over time
+s.waitForBoot {
+    // Define a SynthDef to use (or use the default one, or one from a library)
+    SynthDef(\saw, { arg out=0, gate=1, freq=440, amp=0.2, pan=0, lpf=4000, lpq=0.5, att=0.01, dec=0.2, sus=0.5, rel=0.1;
+        var sig = Saw.ar(freq * [1, 1.01]).mean;
+        sig = RLPF.ar(sig, lpf, lpq);
+        sig = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: 2) * sig;
+        OffsetOut.ar(out, Pan2.ar(sig, pan, amp));
+    }).add;
+    s.sync;
+
+	b = Bacalao();
+	b.tempo = 1; // set tempo to 120 bpm (2 beats per second)
+    {
+        // Use "wait" to simulate a live coder's command execution over time
+
+        // play a scale repeatedly, with alternating amplitude accents per note
+		b.p(\syn, deg"[0 1 2 3 4 5 6 7]*2" << inst"\saw" << amp"[0.12 0.06]" << slow"4");
+        8.wait;
+        // bassline using repeat, rest with hold and sub-phrase
+		b.p(\bass, deg"[-14*3 ~@3 [-8 ~ -7]]" << inst"\saw" << pan"[-0.9 0.9 0]" << amp"0.3" << slow"4");
+        8.wait;
+		b.tempo = 1.5.debug("tempo"); // set tempo to 90 bpm (1.5 beats per second)
+        8.wait;
+		[\syn, \bass].do(b.clear(_, 5)); // fade out all defs over 5 seconds
+	}.fork(b.clock);
+}
+)
+::
+
+section:: Bacalao Pattern Language
+
+subsection:: Overview
+
+Bacalao sets up a pre-processor that runs on any code executed in the IDE,
+which allows simplified definition of link::Classes/Pbind::s that can encode
+duration with their patterns.
+
+subsection:: Event key shortcuts
+
+Generally, these are three- (or two-, or four-) letter shortened versions of
+the link::Classes/Event#defaultParentEvent#default Event keys::.
+
+list::
+
+## strong::deg:: == \degree
+
+code::
+deg"0 1 2 3"
+// equivalent to Pbind(\degree, Pseq([0,1,2,3], 1), \dur, Pseq([0.25,0.25,0.25,0.25], 1))
+::
+
+## strong::ins:: or strong::inst:: == \instrument
+
+code::
+inst"\saw"
+// equivalent to Pbind(\instrument, \saw)
+::
+
+## strong::oct:: == \octave
+
+code::
+oct"6 5"
+// equivalent to Pbind(\octave, Pseq([6,5], 1), \dur, Pseq([0.5,0.5], 1))
+::
+
+::
+
+section:: Using VST Instruments
+
+Bacalao integrates the VSTPlugin Quark (download and install the
+link::https://git.iem.at/pd/vstplugin/-/releases##SuperCollider extension
+from here::), to allow VST instruments to be played easily using patterns,
+and apply SuperCollider-defined effects on them.
+
+More documentation TBD... (-;
+

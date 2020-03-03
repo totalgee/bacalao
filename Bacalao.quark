@@ -1,0 +1,18 @@
+var deps = [ "wslib", "Bjorklund" ];
+
+(
+          \name: "Bacalao",
+       \summary: "Somewhat fishy live cod(e) extensions to SuperCollider, inspired in part by TidalCycles patterns.",
+        \author: "Glen Fraser",
+     \copyright: "Glen Fraser, 2019-2020",
+       \license: "GPL",
+       \version: "0.3.3",
+        \schelp: "Classes/Bacalao",
+           \url: "https://github.com/totalgee/bacalao",
+  \dependencies: deps,
+         \since: "2019",
+\ext_dependancy: "  Optional but recommended extensions:\n"
+                 "    VSTPlugin: https://git.iem.at/pd/vstplugin/-/releases \n"
+                 "    SC3-plugins: https://github.com/supercollider/sc3-plugins\n"
+                 "    ChordSymbol Quark: https://github.com/triss/ChordSymbol",
+)

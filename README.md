@@ -45,8 +45,8 @@ Be warned that this is primarily Glen's live coding language and
 playground, so it will evolve and change according to his whims, but
 it may still be interesting or useful to others. It makes no promises
 to be backward (or forward, or sideways) compatible. It's a set of
-tools for making music on the fly, so -- live in the moment, and let
-old code be old code.
+tools for making music on the fly, so -- swim free, live in the moment,
+and let old code be old code.
 
 ## Etymology
 Bacalao (the Spanish word for

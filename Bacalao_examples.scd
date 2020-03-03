@@ -321,3 +321,91 @@ Platform.userExtensionDir.openOS;
 
 //////////////////////////////////////////////////////////////////////
 
+b = Bacalao();
+b.tempo = 90/60;
+
+// Show which VST instruments are available on your system (you may
+// specify an extra search path argument if desired).
+b.vstPrintInstruments(onlyWithPresets: false)
+
+// If you see some instruments listed in the Post window, choose one to load:
+b.vstInit(\piano, "FM8")
+
+// You need to wait for it to load, it may take a few seconds.
+// This happens asynchronously, so if other patterns are playing,
+// they should continue without glitches, but you can't access
+// the language for a moment.
+
+// Now use the VST to play something with its default configuration
+b.p(\piano, deg"0 2 4 7 [6 5] [4 3] 2 -1" << PampRand(0.4,0.6))
+
+// If you don't hear anything, or if you don't like the preset,
+// you can modify it:
+b.vst(\piano).editor
+// Now the VST's window should be open (you'll need to bring it to the foreground)
+
+// After making some changes, loading presets, etc., you can
+// save a preset for quick loading in future:
+b.vst(\piano).savePreset("piano")
+// b.vst(\piano) gives you access to the VSTPluginController object:
+HelpBrowser.openHelpFor("VSTPluginController")
+
+// In future, you can directly load it like this:
+b.vstInit(\piano, "FM8", "piano")
+
+// Or you can also read/change preset without changing the VST:
+b.vstRead(\piano, "piano")
+
+// If you want to know where it's saved that preset, there is a
+// separate directory per plugin:
+b.vstPresetDir(\piano).openOS
+
+// To stop playing VST instruments, you should clear(), which will
+// remove all patterns and effects, but will leave the VST Synth
+// still running on an Ndef, so you can use it again.
+b.clear(\piano, 4)
+
+// Clear also turns off processing for the VST instrument, so it
+// won't consume CPU. But it can be reactivated in future without
+// caling vstInit()!
+b.p(\piano, mn"48 50 55 60" << amp"0.6")
+
+// If you call free(), it will perform a clear() but also remove
+// the VST Synth.
+b.free(\piano)
+
+// Now, the \piano definition is totally empty. If we play something
+// on it  now, it will use the 'default' SuperCollider Synth instead,
+// no longer a VST.
+b.once(\piano, note"0 1 2 3")
+
+
+// If you have a VST instrument that responds to MIDI bank and
+// program change, you can set them like this on load:
+// (use an Association for (bank -> program), in this example
+// we request bank 7 and program 3)
+b.vstInit(\plink, "AAS Player", bankAndProgram: 7 -> 3)
+
+b.p(\plink, deg"-7 -9 -5 ~" << PampRand(0.4,0.8))
+
+b.vst(\plink).editor
+
+// Change to a different bank and program:
+b.vstBankProgram(\plink, 2 -> 20)
+
+// You can apply SuperCollider effects (fx) to definitions,
+// whether they be for VST instruments or regular SynthDefs.
+b.fx(\plink -> 10, { arg in; CombL.ar(in, 2, 0.75 / b.tempo, 2) }, 0.4)
+
+(
+b.fx(\plink -> 10, { arg in;
+	var drive = (in * LFDNoise3.kr(1).exprange(0.5,50)).distort;
+	CombL.ar(BLowPass.ar(drive, SinOsc.kr(b.tempo / 4).exprange(80,1200), 1), 2, 0.75 / b.tempo, 2)
+}, 0.5)
+)
+
+b.fx(\plink -> 20, { arg in; JPverb.ar(in, 4, 0.2) }, 0.3)
+
+
+// You can also remove all VST patterns and definitions in one go, by calling:
+b.vstFreeAll(5)
