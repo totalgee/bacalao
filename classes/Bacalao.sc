@@ -886,6 +886,8 @@ BacalaoParser {
 						elems.printOn(stream); });
 					var longDursStr = String.streamContents({ arg stream;
 						durs.printOn(stream); });
+					//var longDursStr = String.streamContents({ arg stream;
+					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
 					var numCyclesRequired = numAlternates.reduce(\lcm) ? 1.0;
 					replaceStr = "Pbind('%', Ppatlace(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
 				} {
@@ -1083,6 +1085,8 @@ BacalaoParser {
 						elemSeq.printOn(stream); });
 					var longDursStr = String.streamContents({ arg stream;
 						durs.printOn(stream); });
+					//var longDursStr = String.streamContents({ arg stream;
+					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
 					var numCyclesRequired = 1.0;
 					replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
 				} {
@@ -1286,6 +1290,28 @@ BacalaoParser {
 		};
 		// if (verbose) { "Returning %".format(arr).postln };
 		^arr
+	}
+
+
+	// Adjust event/durations (produced by calculateDurations) so that when
+	// their cumulative duration is very close to an integer (bar), the
+	// previous duration is adjusted so the sum is exactly on the bar.
+	// e.g. ((1/6)!6).sum - 1 is not exactly 0
+	*prAdjustDurations { arg eventAndDurationArray;
+		var runningSum = 0;
+		^eventAndDurationArray.collect{ arg eventAndDur;
+			var distanceToInteger;
+			var dur = eventAndDur[1];
+			runningSum = runningSum + dur;
+			distanceToInteger = runningSum.round - runningSum;
+			if (distanceToInteger.abs < 1e-9 and: { distanceToInteger.abs > 0 }) {
+				var adjusted = dur + distanceToInteger;
+				"Adjusting dur % to %".format(dur.asFloat.asStringPrec(17), adjusted.asStringPrec(17)).postln;
+				dur = adjusted;
+				runningSum = 0;
+			};
+			[ eventAndDur[0], dur ]
+		}
 	}
 
 	// It's about twice as fast to use an Array rather than List with default sizes

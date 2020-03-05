@@ -225,103 +225,6 @@ TestBacalao : UnitTest {
 		this.assertEquals(parse.findChord("5 <a,b> <1 <2,3>> stuff <1 2>"), [ [ 3, "a,b" ], [ 12, "2,3" ] ], "findChord - multiple");
 	}
 
-	test_instDefCommandParse {
-		// var b = Bacalao();
-		// var deviceName = "IAC Driver";
-		// var portName = "Bus 1";
-		// var midiChannelFromOne = 5;
-		// var defCmd;
-		//
-		// this.assertEquals(try
-		// 	{
-		// 		b.cmd("x : inst piano & deg [1 2 3 [0 5]]");
-		// 	} { |err|
-		// 		err.errorString
-		// 	}, "ERROR: SynthDef or MIDI instrument 'piano' not found...",
-		// "Try to use MIDI inst before definition - throw");
-		//
-		// defCmd = b.cmd("inst piano : midi(" ++ deviceName ++ "," ++ portName ++ ", " ++ midiChannelFromOne ++ ")", test: true);
-		//
-		// this.assertEquals(defCmd.channel, midiChannelFromOne - 1, "instDef command MIDI channel");
-		// this.assertEquals(defCmd.midiOut.class, MIDIOut, "instDef command MIDI channel");
-		// this.assertEquals(MIDIClient.destinations[defCmd.midiOut.port].device, deviceName, "instDef command MIDI deviceName");
-		// this.assertEquals(MIDIClient.destinations[defCmd.midiOut.port].name, portName, "instDef command MIDI portName");
-		//
-		// this.assertEquals(b.cmd("x : inst piano & deg [1 2 3 [0 5]]", test: true),
-		// "x : inst piano degree [ 1, 2, 3, 0, 5 ] dur [ 0.25, 0.25, 0.25, 0.125, 0.125 ] ", "Use MIDI inst after definition");
-	}
-
-	test_globalCommandParse {
-		// var b = Bacalao.new;
-		// this.assertEquals(b.cmd("  clear 5  3", test: true),
-		// "ERROR: clear needs 0 or 1 argument, had 2", "clear - too many args");
-		// this.assertEquals(b.cmd("  clear 2", test: true),
-		// "clear 2", "clear - 1 arg");
-		// this.assertEquals(b.cmd("  clear  ", test: true),
-		// "clear nil", "clear - no args");
-		// this.assertEquals(b.cmd(" tempo 100/60 ", test: true),
-		// "tempo 1.6666666666667", "tempo - 1 arg");
-		// this.assertEquals(b.cmd(" tempo 100/60 3", test: true),
-		// "ERROR: tempo takes 1 argument, had 2", "tempo - too many args");
-		// this.assertEquals(b.cmd(" tempo ", test: true),
-		// "ERROR: tempo takes 1 argument, had 0", "tempo - no args");
-		// this.assertEquals(b.cmd("  beatsPerBar 6 ", test: true),
-		// "beatsPerBar 6", "beatsPerBar - 1 arg");
-		// this.assertEquals(b.cmd("  beatsPerBar 6 3", test: true),
-		// "ERROR: beatsPerBar takes 1 argument, had 2", "beatsPerBar - too many args");
-		// this.assertEquals(b.cmd("  beatsPerBar x6", test: true),
-		// "beatsPerBar 6", "beatsPerBar - invalid arg (ignores bad char)");
-		// this.assertEquals(b.cmd("  quant 6 ", test: true),
-		// "quant [ 6, 0 ]", "quant - 1 arg");
-		// this.assertEquals(b.cmd("  quant 6 -1.5 ", test: true),
-		// "quant [ 6, -1.5 ]", "quant - 2 args");
-		// this.assertEquals(b.cmd("  quant ", test: true),
-		// "quant nil", "quant - 0 args");
-		// this.assertEquals(b.cmd("  quant 6 -1.5 13", test: true),
-		// "ERROR: global quant needs 0 to 2 arguments ([quant [phase]]), had 3", "quant - 3 args");
-		//
-		// this.assertEquals(b.cmd(" yuck", test: true),
-		// "ERROR: Unknown command 'yuck'", "unknown command");
-		// this.assertEquals(b.cmd(" bleargh 5", test: true),
-		// "ERROR: Unknown command 'bleargh'", "unknown command - with arg");
-	}
-
-	test_defCommandParse {
-		// var b = Bacalao.new;
-		// this.assertEquals(b.cmd(" testDef : inst saw & deg [1 2 3 4]*2@3", test: true),
-		// "testDef : inst saw degree [ 1, 2, 3, 4, 1, 2, 3, 4 ] dur [ 0.375, 0.375, 0.375, 0.375, 0.375, 0.375, 0.375, 0.375 ] ", "def command");
-		// this.assertEquals(b.cmd(" testDef : deg [1 2 3 4] & amp [0.1 0.5 0.25] & pan [-1 1]", test: true),
-		// "testDef : degree [ 1, 2, 3, 4 ] dur [ 0.25, 0.25, 0.25, 0.25 ] amp [ 0.1, 0.5, 0.25 ] dur [ 0.33333333333333, 0.33333333333333, 0.33333333333333 ] pan [ -1, 1 ] dur [ 0.5, 0.5 ] ", "def command with amp and pan");
-		// this.assertEquals(b.cmd(" testDef : inst saw & deg [1 2 3 4] & unknown", test: true),
-		// "ERROR: unknown needs 1 balanced array argument or value, had 0 args", "def with invalid command");
-		// this.assertEquals(b.cmd("t: inst saw & deg [1 ~ ~@2 ~*3]", test: true),
-		// 	"t : inst saw degree [ 1, a Rest, a Rest, a Rest, a Rest, a Rest ] dur [ 0.2, 0.2, 0.4, 0.066666666666667, 0.066666666666667, 0.066666666666667 ] ",
-		// "def command with rests");
-		// this.assertEquals(b.cmd("t: inst saw & deg [1 7/8]", test: true),
-		// "ERROR: Invalid array entry: \"7/8\"", "def command invalid element");
-		//
-		// this.assertEquals(b.cmd("syn : ", test: true),
-		// "syn : ", "empty def");
-		// this.assertEquals(b.cmd("syn : clear 3", test: true),
-		// "syn : clear 3 ", "def clear");
-		// this.assertEquals(b.cmd("syn : clear 3 & note [0 -1 -2 -3]", test: true),
-		// "ERROR: specifying 'note' - def 'syn' has been cleared", "def clear with extra pattern def");
-		// this.assertEquals(b.cmd("syn : inst saw", test: true),
-		// "syn : inst saw ", "def inst only");
-		// this.assertEquals(b.cmd("syn : inst unknown", test: false),
-		// "ERROR: SynthDef or MIDI instrument 'unknown' not found...", "def invalid inst");
-		//
-		// this.assertEquals(b.cmd("syn : quant 6 & deg 0", test: true),
-		// "syn : quant [ 6, 0 ] degree [ 0 ] dur [ 1 ] ", "def quant single arg");
-		// this.assertEquals(b.cmd("syn : quant 6 -1 & deg [2 3]", test: true),
-		// "syn : quant [ 6, -1 ] degree [ 2, 3 ] dur [ 0.5, 0.5 ] ", "def quant two args");
-		// this.assertEquals(b.cmd("syn : quant 6 -1 0.5 & deg [2 3]", test: true),
-		// "ERROR: def quant needs 1 or 2 arguments (quant [phase]), had 3", "def quant three args");
-		// this.assertEquals(b.cmd("syn : quant & deg [2 3]", test: true),
-		// "ERROR: def quant needs 1 or 2 arguments (quant [phase]), had 0", "def quant no args");
-		//
-	}
-
 	test_arrayDuration {
 		this.assertEquals(parse.calculateDurations(parse.parseArray("[1 2]")),
 			[ [ "1", 0.5 ], [ "2", 0.5 ] ], "simple array");
@@ -339,30 +242,6 @@ TestBacalao : UnitTest {
 		this.assertEquals(parse.calculateDurations(parse.parseArray("[1 ~@2 [3 4]]")),
 			[ [ "1", 0.25 ], [ "~", 0.5 ], [ "3", 0.125 ], [ "4", 0.125 ] ],
 			"rest with hold");
-		// this.assertEquals(try
-		// 	{
-		// 		var result = parse.parseArray("[5pp7]");
-		// 		parse.calculateDurations(result);
-		// 	} { |err|
-		// 		err.errorString
-		// 	}, "ERROR: Labels as notes not yet supported: \"5pp7\"",
-		// "invalid array elems - throw");
-		// this.assertEquals(try
-		// 	{
-		// 		var result = parse.parseArray("bd*2@5");
-		// 		parse.calculateDurations(result);
-		// 	} { |err|
-		// 		err.errorString
-		// 	}, "ERROR: Labels as notes not yet supported: \"bd\"",
-		// "invalid array elems - throw");
-		// this.assertEquals(try
-		// 	{
-		// 		var result = parse.parseArray("[3/4]");
-		// 		parse.calculateDurations(result);
-		// 	} { |err|
-		// 		err.errorString
-		// 	}, "ERROR: Invalid array entry: \"3/4\"",
-		// "invalid array elems - throw");
 
 		this.assertEquals(parse.parseArray("[1 2]"),
 			[ ( [ ( "1" -> 1 ), ( "2" -> 1 ) ] -> 1 ) ], "parseArray simple");
