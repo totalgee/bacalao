@@ -146,9 +146,21 @@ TestBacalao : UnitTest {
 		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index");
 
 		~chord = [ [1,3,5,7], [0,1,3,5], [-2,0,1,3], [-4,-2,0,1] ];
-		str = "deg\"chord:1, chord:3\"";
+		str = "deg\"chord:1 chord:3\"";
 		expected = Pbind('degree', Ppatlace([ [0,1,3,5], [-4,-2,0,1] ], 1), 'dur', 0.5);
 		this.compareEvents(parse.preProcess(str).interpret, expected, 3, "variables in current Environment");
+
+		~custom = (
+			fred: 36,
+			bob: [38, 40],
+			steve: [ [46, 48, 50] ]
+		);
+		str = "mn~custom\"fred bob:0 steve bob:1\"";
+		expected = Pbind('midinote', Ppatlace([ 36, 38, [46,48,50], 40]), 'dur', 0.25);
+		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "locally-specified variable");
+
+		str = "mn~unknown\"dave ~\"";
+		this.assertException({parse.preProcess(str)}, Error, "unknown event pattern variable lookup");
 	}
 
 	test_library {

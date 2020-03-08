@@ -627,7 +627,9 @@ Bacalao {
 		};
 		if (vst.notNil and: { role.isNil }) {
 			pdef.source = pattern <> (type: \vst_midi, vst: vst);
-			pdef.play;
+			// Must include clock argument here, even if we set the Pdef's clock
+			// See issue: https://github.com/supercollider/supercollider/issues/4803
+			pdef.play(clock);
 			// Explicitly resume processing the Synth in case it's bypassed
 			ndef.set(\bypass, 0);
 		} {
@@ -668,7 +670,7 @@ Bacalao {
 BacalaoParser {
 	classvar eventAbbrevs;
 	const unsignedInt = "\\d+";
-	const eventPattern = "(?:[^a-z]*|(\\b[a-z][a-zA-Z0-9]*))\"([^\"\\n]*)\"";
+	const eventPattern = "(?:[^a-z]*|(\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
 	const <charPattern = "(?:[^a-z]*|(\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
@@ -778,13 +780,14 @@ BacalaoParser {
 
 	*prProcessPatterns { arg code;
 		var curOffset = 0;
-		var pat = code.findRegexp(eventPattern).clump(3).reject{|m| m[1][1].isEmpty};
+		var pat = code.findRegexp(eventPattern).clump(4).reject{|m| m[1][1].isEmpty};
 		// pat.postln;
 		pat.do{ arg p;
 			var fullMatch = p[0];
 			// Convert abbreviation to long name (if one is found)
 			var patternType = this.resolveAbbrev(p[1].last);
-			var patternString = p[2].last;
+			var optVariableName = p[2].last;
+			var patternString = p[3].last;
 			var replaceStr;
 			var replacements = [];
 			var numAlternates = [];
@@ -827,9 +830,16 @@ BacalaoParser {
 				}.value;
 				// Replace alphabetic-only strings by Symbol notation: 'symbol'
 				// patternArray = patternArray.collect{ |p| "^[A-Za-z]+$".matchRegexp(p).if(p.asSymbol.cs, p) };
-				var parserVariables = topEnvironment[Bacalao.preProcessorVariables];
-				var elems, durs;
-				var resolveChord = { arg elem;
+				var elems, durs, resolveChord;
+				var parserVariables = if (optVariableName.isEmpty.not) {
+					currentEnvironment[optVariableName.asSymbol]
+				} {
+					currentEnvironment
+				};
+				if (parserVariables.isKindOf(Dictionary).not) {
+					Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
+				};
+				resolveChord = { arg elem;
 					// If we've got the ChordSymbol Quark installed, try to lookup as a chord
 					if (\ChordSymbol.asClass.notNil and: { elem.first.isUpper }) {
 						switch (patternType)

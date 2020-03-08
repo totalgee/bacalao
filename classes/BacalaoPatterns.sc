@@ -190,7 +190,7 @@ Psync2 : FilterPattern {
 			delta = inevent.delta;
 			nextElapsed = elapsed + delta;
 
-			if (localmaxdur.notNil and: { nextElapsed.round(tolerance) >= localmaxdur }) {
+			if (localmaxdur.notNil and: { nextElapsed.roundUp(tolerance) >= localmaxdur }) {
 				inevent = inevent.copy;
 				inevent.put(\delta, localmaxdur - elapsed);
 				event = inevent.yield;
@@ -264,7 +264,44 @@ Psync2 : FilterPattern {
 	}
 }
 
-// Fixes from SC Pull Request: https://github.com/supercollider/supercollider/pull/4779
+// This overload should be removed (replaced by regular prNext) once the
+// changes from
+// https://github.com/supercollider/supercollider/pull/4801 are in our
+// supported SuperCollider version (if they ever are).
+//
+// It "corrects" the nextTime and nextBeat so they fall precisely on an
+// integer beat, if they happen to be *extremely* close to a beat
+// (within 1e-12 beats).
++EventStreamPlayer {
+
+	prNext { arg inTime;
+		var nextTime;
+		var outEvent = stream.next(event.copy);
+		if (outEvent.isNil) {
+			streamHasEnded = stream.notNil;
+			cleanup.clear;
+			this.removedFromScheduler;
+			^nil
+		}{
+			var roundedBeat;
+			var deltaFromRounded;
+			nextTime = outEvent.playAndDelta(cleanup, muteCount > 0);
+			if (nextTime.isNil) { this.removedFromScheduler; ^nil };
+			nextBeat = inTime + nextTime;	// inval is current logical beat
+			// [inTime.asStringPrec(17), nextBeat.asStringPrec(17)].debug("inTime, nextBeat");
+			roundedBeat = nextBeat.round;
+			deltaFromRounded = roundedBeat - nextBeat;
+			if (deltaFromRounded.abs < 1e-12 and: { deltaFromRounded != 0 }) {
+				nextBeat = roundedBeat;
+				nextTime = nextTime + deltaFromRounded;
+				// nextTime.asStringPrec(17).debug("corrected time");
+			};
+			^nextTime
+		};
+	}
+}
+
+// Fix from SC Pull Request: https://github.com/supercollider/supercollider/pull/4792
 // Keep here until your SC version includes these fixes.
 // From Pdef.sc, line 176:
 +PatternProxy {
@@ -274,8 +311,8 @@ Psync2 : FilterPattern {
 	}
 }
 
-// This and Pfindur2 (above) should be removed once the changes from
-// https://github.com/supercollider/supercollider/pull/4779 are in our
+// This and Psync2 (above) should be removed once the changes from
+// https://github.com/supercollider/supercollider/pull/4792 are in our
 // supported SuperCollider version.
 +EventPatternProxy {
 
@@ -324,5 +361,4 @@ Psync2 : FilterPattern {
 			}
 		}
 	}
-
 }

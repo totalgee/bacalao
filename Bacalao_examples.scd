@@ -77,6 +77,13 @@ b.once(\a, midinote"bd:1 bd:r".trace) // run various times, second note is rando
 b.once(\a, deg"chord chord:1");
 b.once(\a, deg"0 chord:r") // run various times
 
+// You can also define variables that are Dictionaries, to be used
+// to lookup variables in different pattern definitions.
+~dict1 = (bd: 48, sd: [50,51])
+~dict2 = (bd: 60, sd: [67,72,79])
+b.once(\a, mn~dict1"[bd sd:r]*2")
+b.once(\a, mn~dict2"[bd sd:r]*2")
+
 // There are abbreviations for most common Event keys/parameters:
 mn"60" // midinote
 deg"0" // degree
