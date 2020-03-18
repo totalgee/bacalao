@@ -387,6 +387,7 @@ Bacalao {
 					vstDict[defName] = [ vstController, vstProxy ];
 					vstController.open(vstName, editor: true, action: {
 						"Opened VSTPluginController for % with %".format(defName, vstName).postln;
+						vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
 						if (programPath.notNil) {
 							if (bankAndProgram.notNil) {
 								"Both programPath and bankAndProgram were specified...only using programPath".warn;
@@ -489,7 +490,7 @@ Bacalao {
 
 	// Can send bank and program as separate arguments, or
 	// a single Association (bank -> program) to the bank argument.
-	vstBankProgram { arg defName, bank, program;
+	vstBankProgram { arg defName, bank, program, quant = #[1, 0.925];
 		var vst = this.vst(defName);
 		if (bank.isKindOf(Association)) {
 			#bank, program = [bank.key, bank.value];
@@ -498,9 +499,11 @@ Bacalao {
 			var midi = vst.midi;
 			var bankMsb = (bank - 1) div: 128;
 			var bankLsb = (bank - 1) mod: 128;
-			midi.control(0, 0, 0);
-			midi.control(0, 32, bank-1);
-			midi.program(0, program-1);
+			this.sched({
+				midi.control(0, 0, 0);
+				midi.control(0, 32, bank-1);
+				midi.program(0, program-1);
+			}, quant);
 		} {
 			"VST instrument '%' is not defined".format(defName).postln;
 		}
@@ -778,6 +781,65 @@ BacalaoParser {
 		// midicmd: \noteOn
 	}
 
+	*prResolveVariables { arg elems, patternType, optVariableName;
+		var resolveChord = { arg elem;
+			// If we've got the ChordSymbol Quark installed, try to lookup as a chord
+			if (\ChordSymbol.asClass.notNil and: { elem.first.isUpper }) {
+				switch (patternType)
+				{ \degree } {
+					var notes = ChordSymbol.asNotes(elem);
+					if (notes != elem) {
+						notes.asArray.collect { |n|
+							// TODO when next version of SC comes out use keyToDegree
+							n.keyToDegree2(Scale.major, 12);
+						} //.debug("ChordSymbol")
+					} {
+						elem
+					}
+				}
+				{ ChordSymbol.asNotes(elem) } //.debug("ChordSymbol") };
+			} {
+				// Stick with the original element, there is no lookup
+				elem
+			}
+		};
+
+		var parserVariables = if (optVariableName.isEmpty.not) {
+			currentEnvironment[optVariableName.asSymbol]
+		} {
+			currentEnvironment
+		};
+		if (parserVariables.isKindOf(Dictionary).not) {
+			Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
+		};
+
+		// Replace Bacalao parser variables with their values
+		^elems.collect{ arg elem;
+			if (parserVariables.notNil) {
+				var variable, index, substitute;
+				// Allow (e.g.) "bd:5"-style indexing, or simply "bd" (equivalent to "bd:0")
+				// Also allow "bd:r", which will choose a random value from the collection.
+				#variable, index = elem.split($:);
+				substitute = parserVariables[variable.asSymbol];
+				if (substitute.notNil) {
+					if (index.notNil) {
+						if (index == "r" and: { substitute.size > 1 }) {
+							"Prand(%,inf)".format(substitute.asArray)
+						} {
+							substitute.asArray.wrapAt(index.asInteger)
+						}
+					} {
+						substitute.first
+					}
+				} {
+					resolveChord.value(elem)
+				}
+			} {
+				resolveChord.value(elem)
+			}
+		}
+	}
+
 	*prProcessPatterns { arg code;
 		var curOffset = 0;
 		var pat = code.findRegexp(eventPattern).clump(4).reject{|m| m[1][1].isEmpty};
@@ -805,6 +867,8 @@ BacalaoParser {
 			this.findChord(patternString).reverseDo{ arg m;
 				var alternateElements = BacalaoParser.splitSimplify(m[1], $,);
 				if (alternateElements.size > 1) {
+					// Replace Bacalao parser variables with their values
+					alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
 					patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
 					replacements = replacements.add("[%]".format(alternateElements.join($,)));
 				};
@@ -813,6 +877,31 @@ BacalaoParser {
 			// Now try to split on space-separated elements in angle brackets (alternation)
 			this.findAngleBracketed(patternString).reverseDo{ arg m;
 				var alternateElements = BacalaoParser.splitSimplify(m[1]);
+
+				alternateElements = alternateElements.collect{ arg elem;
+					var elemMatch = this.findSimpleElem(elem);
+					if (elemMatch.size == 1) {
+						var full, elem, repeat, hold;
+						if (elemMatch[0].size != 4) {
+							Error("Unexpected match size: %".format(elemMatch[0])).throw
+						};
+						#full, elem, repeat, hold = elemMatch[0];
+						if (elem.isEmpty) {
+							Error("There is no array element: %".format(full)).throw
+						};
+						repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
+						hold = if (hold.isEmpty) { 1 } { hold.asFloat };
+						if (hold != 1) {
+							Error("We don't support hold inside alternating <> elements").throw
+						};
+						elem ! repeat;
+					} {
+						Error("Invalid alternate element entry: %".format(elem.cs)).throw;
+					};
+				}.flatten;
+
+				// Replace Bacalao parser variables with their values
+				alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
 				numAlternates = numAlternates.add(alternateElements.size);
 				patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
 				replacements = replacements.add("Pseq([%],inf)".format(alternateElements.join($,)));
@@ -831,62 +920,10 @@ BacalaoParser {
 				// Replace alphabetic-only strings by Symbol notation: 'symbol'
 				// patternArray = patternArray.collect{ |p| "^[A-Za-z]+$".matchRegexp(p).if(p.asSymbol.cs, p) };
 				var elems, durs, resolveChord;
-				var parserVariables = if (optVariableName.isEmpty.not) {
-					currentEnvironment[optVariableName.asSymbol]
-				} {
-					currentEnvironment
-				};
-				if (parserVariables.isKindOf(Dictionary).not) {
-					Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
-				};
-				resolveChord = { arg elem;
-					// If we've got the ChordSymbol Quark installed, try to lookup as a chord
-					if (\ChordSymbol.asClass.notNil and: { elem.first.isUpper }) {
-						switch (patternType)
-						{ \degree } {
-							var notes = ChordSymbol.asNotes(elem);
-							if (notes != elem) {
-								notes.asArray.collect { |n|
-									// TODO when next version of SC comes out use keyToDegree
-									n.keyToDegree2(Scale.major, 12);
-								} //.debug("ChordSymbol")
-							} {
-								elem
-							}
-						}
-						{ ChordSymbol.asNotes(elem) } //.debug("ChordSymbol") };
-					} {
-						// Stick with the original element, there is no lookup
-						elem
-					}
-				};
 				#elems, durs = elemsAndDurs.flop;
 
 				// Replace Bacalao parser variables with their values
-				elems = elems.collect{ arg elem;
-					if (parserVariables.notNil) {
-						var variable, index, substitute;
-						// Allow (e.g.) "bd:5"-style indexing, or simply "bd" (equivalent to "bd:0")
-						// Also allow "bd:r", which will choose a random value from the collection.
-						#variable, index = elem.split($:);
-						substitute = parserVariables[variable.asSymbol];
-						if (substitute.notNil) {
-							if (index.notNil) {
-								if (index == "r" and: { substitute.size > 1 }) {
-									"Prand(%,inf)".format(substitute.asArray)
-								} {
-									substitute.asArray.wrapAt(index.asInteger)
-								}
-							} {
-								substitute.first
-							}
-						} {
-							resolveChord.value(elem)
-						}
-					} {
-						resolveChord.value(elem)
-					}
-				};
+				elems = this.prResolveVariables(elems, patternType, optVariableName);
 
 				// *Don't* convert strings to symbols here...this allows you to evaluate
 				// variables (e.g. n = Pwhite(0,7,1); deg"n*4") and arbitrary code in patterns!

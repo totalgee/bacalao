@@ -101,6 +101,14 @@ TestBacalao : UnitTest {
 		preProcessed = parse.preProcess(str);
 		this.compareEvents(preProcessed.interpret, expected, 13, "chord elements");
 
+		str = "deg\"<0 1*2> <3*3 4 5>\"";
+		expected = Pbind('degree', Ppatlace([ Pseq([ 0, 1, 1 ], inf), Pseq([ 3, 3, 3, 4, 5 ], inf) ], 15), 'dur', 0.5);
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 31, "alternate values with repeats");
+
+		str = "deg\"<0 1@2> 2\"";
+		this.assertException({ parse.preProcess(str) }, Error, "hold not supported in alternate values");
+
 		str = "deg'bacalao ' << amp'94041377'";
 		expected = Pbind('degree', Pseq([ 1, 0, 2, 0, 11, 0, 14, Rest(1) ], 1.0),
 			'dur', 0.125,
@@ -161,6 +169,25 @@ TestBacalao : UnitTest {
 
 		str = "mn~unknown\"dave ~\"";
 		this.assertException({parse.preProcess(str)}, Error, "unknown event pattern variable lookup");
+
+		str = "mn~custom\"<fred bob:0>@3 <steve:0*2 bob:1*3>\"";
+		expected = Pbind('midinote', Ppatlace([ Pseq([ 36, 38 ], inf), Pseq([ [ 46, 48, 50 ], [ 46, 48, 50 ], 40, 40, 40 ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with repeats (explicit Env)");
+
+		~fr = 36;
+		~bo = [38, 40];
+		~st = [ [46, 48, 50] ];
+		str = "mn\"<fr bo:0>@3 <st:0*2 bo:1*3>\"";
+		expected = Pbind('midinote', Ppatlace([ Pseq([ ~fr, ~bo[0] ], inf), Pseq([ ~st[0], ~st[0], ~bo[1], ~bo[1], ~bo[1] ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with repeats (current Env)");
+
+		str = "mn~custom\"<fred,bob:0>*2 <bob:1,fred,60>\"";
+		expected = Pbind('midinote', Ppatlace([ [ 36, 38 ], [ 36, 38 ], [ 40, 36, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (explicit Env)");
+
+		str = "mn\"<fr,bo:0>*2 <bo:1,fr,60>\"";
+		expected = Pbind('midinote', Ppatlace([ [ ~fr, ~bo[0] ], [ ~fr, ~bo[0] ], [ ~bo[1], ~fr, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (current Env)");
 	}
 
 	test_library {
