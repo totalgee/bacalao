@@ -86,6 +86,12 @@ TestBacalao : UnitTest {
 		preProcessed = parse.preProcess(str);
 		this.compareEvents(preProcessed.interpret, expected, 31, "alternating elements longer");
 
+		str = "deg\"1@3!2 [2 3]*2!2\"";
+		expected = Pbind(\degree, Pseq(1!2 ++ ([2, 3]!2!2).flat),
+			\dur, Pseq(0.375!2 ++ (0.03125!8)));
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 31, "duplicated elements and arrays");
+
 		str = "deg\"1 2 3 4 5 6 7 8\" << amp\"Pn(Pseries(0.1,0.1,3))\"";
 		expected = Pbind(\degree, Pseq((1..8)), \amp, Pn(Pseries(0.1,0.1,3)), \dur, 0.125);
 		preProcessed = parse.preProcess(str);
@@ -101,10 +107,13 @@ TestBacalao : UnitTest {
 		preProcessed = parse.preProcess(str);
 		this.compareEvents(preProcessed.interpret, expected, 13, "chord elements");
 
-		str = "deg\"<0 1*2> <3*3 4 5>\"";
+		str = "deg\"<0 1!2> <3!3 4 5>\"";
 		expected = Pbind('degree', Ppatlace([ Pseq([ 0, 1, 1 ], inf), Pseq([ 3, 3, 3, 4, 5 ], inf) ], 15), 'dur', 0.5);
 		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 31, "alternate values with repeats");
+		this.compareEvents(preProcessed.interpret, expected, 31, "alternate values with duplicates");
+
+		str = "deg\"<0 1*2> 2\"";
+		this.assertException({ parse.preProcess(str) }, Error, "repeat not supported in alternate values");
 
 		str = "deg\"<0 1@2> 2\"";
 		this.assertException({ parse.preProcess(str) }, Error, "hold not supported in alternate values");
@@ -121,7 +130,12 @@ TestBacalao : UnitTest {
 		var str, expected;
 		var b = Bacalao();
 		b.setParserVariable("bd", [36, 37, 48, 49]);
-		Bacalao.setParserVariable("sd", 38);
+		Bacalao.setParserVariable("sd", -38);
+		b.setParserVariable("sd", 38);
+		b.vars[\bd] = -1 * [36, 37, 48, 49];
+		this.assertEquals(b.vars['bd'][1], -37, "Get/set using b.vars");
+		~bd = -1 * ~bd;
+		this.assertEquals(b.vars['bd'][2], 48, "Get/set using current Environment");
 
 		str = "note\"sd\"";
 		expected = Pbind(\note, 38);
@@ -170,16 +184,16 @@ TestBacalao : UnitTest {
 		str = "mn~unknown\"dave ~\"";
 		this.assertException({parse.preProcess(str)}, Error, "unknown event pattern variable lookup");
 
-		str = "mn~custom\"<fred bob:0>@3 <steve:0*2 bob:1*3>\"";
+		str = "mn~custom\"<fred bob:0>@3 <steve:0!2 bob:1!3>\"";
 		expected = Pbind('midinote', Ppatlace([ Pseq([ 36, 38 ], inf), Pseq([ [ 46, 48, 50 ], [ 46, 48, 50 ], 40, 40, 40 ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with repeats (explicit Env)");
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (explicit Env)");
 
 		~fr = 36;
 		~bo = [38, 40];
 		~st = [ [46, 48, 50] ];
-		str = "mn\"<fr bo:0>@3 <st:0*2 bo:1*3>\"";
+		str = "mn\"<fr bo:0>@3 <st:0!2 bo:1!3>\"";
 		expected = Pbind('midinote', Ppatlace([ Pseq([ ~fr, ~bo[0] ], inf), Pseq([ ~st[0], ~st[0], ~bo[1], ~bo[1], ~bo[1] ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with repeats (current Env)");
+		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (current Env)");
 
 		str = "mn~custom\"<fred,bob:0>*2 <bob:1,fred,60>\"";
 		expected = Pbind('midinote', Ppatlace([ [ 36, 38 ], [ 36, 38 ], [ 40, 36, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
@@ -310,22 +324,22 @@ TestBacalao : UnitTest {
 				( [ ( "-4" -> 1 ), ( [ ( "5" -> 1 ), ( "-6" -> 1 ) ] -> 1 ) ] -> 2.0 ),
 				( "7" -> 1 ) ] -> 1 ) ], "parseArray complex");
 
-		this.assertEquals(parse.findArrayElem("[1 2@2 [-4 5] ]*3@2"),
-			[ [ "[1 2@2 [-4 5] ]*3@2", "", "[1 2@2 [-4 5] ]", "3", "2", "" ] ], "findArrayElem 1");
+		this.assertEquals(parse.findArrayElem("[1 2@2 [-4 5] ]*3@2!4"),
+			[ [ "[1 2@2 [-4 5] ]*3@2!4", "", "[1 2@2 [-4 5] ]", "3", "2", "4", "" ] ], "findArrayElem 1");
 		this.assertEquals(parse.findArrayElem("1 3d2 bd 2@2 [-4 5]@3"),
-			[ [ "1", "1", "", "", "", "" ],
-				[ "3d2", "3d2", "", "", "", "" ],
-				[ "bd", "bd", "", "", "", "" ],
-				[ "2@2", "2@2", "", "", "", "" ],
-				[ "[-4 5]@3", "", "[-4 5]", "", "3", "" ] ], "findArrayElem 2");
+			[ [ "1", "1", "", "", "", "", "" ],
+				[ "3d2", "3d2", "", "", "", "", "" ],
+				[ "bd", "bd", "", "", "", "", "" ],
+				[ "2@2", "2@2", "", "", "", "", "" ],
+				[ "[-4 5]@3", "", "[-4 5]", "", "3", "", "" ] ], "findArrayElem 2");
 		this.assertEquals(parse.findArrayElem("2@2.5 5*4@3.14"),
-			[ [ "2@2.5", "2@2.5", "", "", "", "" ],
-				[ "5*4@3.14", "5*4@3.14", "", "", "", "" ] ], "findArrayElem 3");
-		this.assertEquals(parse.findBalancedArray("[1 2@2 3 [-4 [5 -6]] 7]*3@2 [1 2 3]@2"),
-			[ [ "[1 2@2 3 [-4 [5 -6]] 7]*3@2", "[1 2@2 3 [-4 [5 -6]] 7]", "3", "2" ],
-				[ "[1 2 3]@2", "[1 2 3]", "", "2" ] ], "findBalancedArray 1");
+			[ [ "2@2.5", "2@2.5", "", "", "", "", "" ],
+				[ "5*4@3.14", "5*4@3.14", "", "", "", "", "" ] ], "findArrayElem 3");
+		this.assertEquals(parse.findBalancedArray("[1 2@2 3 [-4 [5 -6]] 7]*3@2!4 [1 2 3]@2"),
+			[ [ "[1 2@2 3 [-4 [5 -6]] 7]*3@2!4", "[1 2@2 3 [-4 [5 -6]] 7]", "3", "2", "4" ],
+				[ "[1 2 3]@2", "[1 2 3]", "", "2", "" ] ], "findBalancedArray 1");
 		this.assertEquals(parse.findBalancedArray("[1 2@2 3 [-4 [5 -6]] 7]@2.5"),
-			[ [ "[1 2@2 3 [-4 [5 -6]] 7]@2.5", "[1 2@2 3 [-4 [5 -6]] 7]", "", "2.5" ] ],
+			[ [ "[1 2@2 3 [-4 [5 -6]] 7]@2.5", "[1 2@2 3 [-4 [5 -6]] 7]", "", "2.5", "" ] ],
 			"findBalancedArray 2");
 		this.assertEquals(parse.findBalancedArray(""),
 			[ ], "findBalancedArray - empty");

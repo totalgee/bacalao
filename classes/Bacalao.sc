@@ -90,11 +90,7 @@ Bacalao {
 	//   b.setParserVariable('bd', [36, 37, 48, 49]);
 	//   note"bd:3" --> would produce Pbind(\note, 49)
 	*setParserVariable { arg key, values;
-		if (topEnvironment[preProcessorVariables].isKindOf(Environment).not) {
-			"Defining new parser variable Environment".postln;
-			topEnvironment[preProcessorVariables] = Environment();
-		};
-		topEnvironment[preProcessorVariables][key.asSymbol] = values;
+		this.vars[key.asSymbol] = values;
 	}
 
 	setParserVariable { arg key, values;
@@ -103,7 +99,7 @@ Bacalao {
 
 	// This allows the key alone or with a colon to sub-index (e.g. 'bd:3')
 	*lookupVariable { arg key;
-		var parserVariables = topEnvironment[preProcessorVariables];
+		var parserVariables = this.vars;
 		var elem = key.asString;
 		^parserVariables !? {
 			var variable, index, substitute;
@@ -130,7 +126,7 @@ Bacalao {
 	}
 
 	*printVariables {
-		var parserVariables = topEnvironment[preProcessorVariables];
+		var parserVariables = this.vars;
 		var buffers = ();
 		var index = 0;
 		"----- variables:".post;
@@ -157,15 +153,27 @@ Bacalao {
 		Bacalao.printVariables();
 	}
 
+	*vars {
+		if (topEnvironment[preProcessorVariables].isKindOf(Environment).not) {
+			"Defining new parser variable Environment".postln;
+			topEnvironment[preProcessorVariables] = Environment();
+		};
+		^topEnvironment[preProcessorVariables]
+	}
+
+	vars { ^Bacalao.vars }
+
 	push {
-		if (currentEnvironment != topEnvironment[preProcessorVariables]) {
-			topEnvironment[preProcessorVariables].push;
+		var env = this.vars;
+		if (currentEnvironment != env) {
+			env.push;
 		}
 	}
 
 	pop {
-		if (currentEnvironment == topEnvironment[preProcessorVariables]) {
-			topEnvironment[preProcessorVariables].pop;
+		var env = this.vars;
+		if (currentEnvironment == env) {
+			env.pop;
 		}
 	}
 
@@ -678,7 +686,7 @@ BacalaoParser {
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
 	const nonArraySpace = "[^[:space:]\\][]+";
-	const elemWithoutMods = "[^[:space:]\\][@*]+";
+	const elemWithoutMods = "[^[:space:]\\][@*!]+";
 	const balancedAngleBracket = "(<((?>[^><]|(?1))*)>)";
 	const chord = "<([^>< ]+)>";
 	classvar <reCharEventsPerBar;
@@ -711,8 +719,8 @@ BacalaoParser {
 		numberInt = "-?" ++ unsignedInt;
 		reCharEventsPerBar = "^(" ++ unsignedInt ++ ")@";
 		numberFloat = "-?" ++ unsignedFloat;
-		// elemModifiers must be in the correct order (optional repeat, then optional hold)
-		elemModifiers = "(?:\\*(" ++ unsignedInt ++ "))?(?:@(" ++ unsignedFloat ++ "))?";
+		// elemModifiers must be in the correct order (optional repeat, then optional hold, then optional duplicate)
+		elemModifiers = "(?:\\*(" ++ unsignedInt ++ "))?(?:@(" ++ unsignedFloat ++ "))?(?:!(" ++ unsignedInt ++ "))?";
 		// [ overallMatch, balancedArray, arrayRepeat, arrayHold ]
 		balancedArray = "(?:(" ++ "\\[(?>[^][]|(?1))*\\])" ++ elemModifiers ++ ")";
 		number = "(?:" ++ numberFloat ++ ")|(?:" ++ rest ++ ")";
@@ -881,20 +889,21 @@ BacalaoParser {
 				alternateElements = alternateElements.collect{ arg elem;
 					var elemMatch = this.findSimpleElem(elem);
 					if (elemMatch.size == 1) {
-						var full, elem, repeat, hold;
-						if (elemMatch[0].size != 4) {
+						var full, elem, repeat, hold, dupl;
+						if (elemMatch[0].size != 5) {
 							Error("Unexpected match size: %".format(elemMatch[0])).throw
 						};
-						#full, elem, repeat, hold = elemMatch[0];
+						#full, elem, repeat, hold, dupl = elemMatch[0];
 						if (elem.isEmpty) {
 							Error("There is no array element: %".format(full)).throw
 						};
 						repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
 						hold = if (hold.isEmpty) { 1 } { hold.asFloat };
-						if (hold != 1) {
-							Error("We don't support hold inside alternating <> elements").throw
+						dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
+						if (hold != 1 or: { repeat != 1 }) {
+							Error("We don't support hold or repeat inside alternating <> elements, only '!' duplicate").throw
 						};
-						elem ! repeat;
+						elem ! dupl;
 					} {
 						Error("Invalid alternate element entry: %".format(elem.cs)).throw;
 					};
@@ -1039,7 +1048,7 @@ BacalaoParser {
 	}
 
 	*prEvalVariableCharString { arg barString, variableName;
-		//var parserVariables = topEnvironment[Bacalao.preProcessorVariables];
+		//var parserVariables = this.vars;
 		var parserVariables = currentEnvironment;
 		var lookup = parserVariables[variableName.asSymbol];
 		if (lookup.isKindOf(Dictionary).not) {
@@ -1180,15 +1189,15 @@ BacalaoParser {
 	}
 
 	*findBalancedArray { arg str, offset=0;
-		^(str.findRegexp(balancedArray, offset).flop[1] ?? #[]).clump(4)
+		^(str.findRegexp(balancedArray, offset).flop[1] ?? #[]).clump(5)
 	}
 
 	*findArrayElem { arg str, offset=0;
-		^(str.findRegexp(arrayElem, offset).flop[1] ?? #[]).clump(6)
+		^(str.findRegexp(arrayElem, offset).flop[1] ?? #[]).clump(7)
 	}
 
 	*findSimpleElem { arg str, offset=0;
-		^(str.findRegexp(simpleElem, offset).flop[1] ?? #[]).clump(7)
+		^(str.findRegexp(simpleElem, offset).flop[1] ?? #[]).clump(5)
 	}
 
 	*findWord { arg str, offset=0;
@@ -1296,35 +1305,39 @@ BacalaoParser {
 		var arr = [];
 		var arrItems = this.findArrayElem(str);
 		arrItems.do{ |item|
-			var full, elem, subArr, subArrRepeat, subArrHold, invalidElem;
+			var full, elem, subArr, subArrRepeat, subArrHold, subArrDupl, invalidElem;
 			// item.debug("item");
-			#full, elem, subArr, subArrRepeat, subArrHold, invalidElem = item;
+			#full, elem, subArr, subArrRepeat, subArrHold, subArrDupl, invalidElem = item;
 			// elem.debug("elem");
 			if (elem.notEmpty) {
 				var elemMatch = this.findSimpleElem(elem);
 				// elemMatch.debug("elemMatch");
 				if (elemMatch.size == 1) {
-					var full, elem, repeat, hold;
-					if (elemMatch[0].size != 4) {
+					var full, elem, repeat, hold, dupl;
+					if (elemMatch[0].size != 5) {
 						Error("Unexpected match size: %".format(elemMatch[0])).throw
 					};
-					#full, elem, repeat, hold = elemMatch[0];
+					#full, elem, repeat, hold, dupl = elemMatch[0];
 					if (elem.isEmpty) {
 						Error("There is no array element: %".format(full)).throw
 					};
 					repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
 					hold = if (hold.isEmpty) { 1 } { hold.asFloat };
+					dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
 					// "Adding a result: %".format(elem).postln;
 					if (repeat > 1) {
 						elem = (elem -> 1) ! repeat;
 					};
-					arr = arr.add(elem -> hold);
+					dupl.do{
+						arr = arr.add(elem -> hold);
+					};
 				} {
 					Error("Invalid array entry: %".format(elem.cs)).throw;
 				}
 			} {
 				var repeat = if (subArrRepeat.isEmpty) { 1 } { subArrRepeat.asInteger };
 				var hold = if (subArrHold.isEmpty) { 1 } { subArrHold.asFloat };
+				var dupl = if (subArrDupl.isEmpty) { 1 } { subArrDupl.asInteger };
 				var subArrResult;
 				subArr = subArr.drop(1).drop(-1); // get rid of outer brackets
 				// if (verbose) { "Will parseArray recursively on %".format(subArr).postln };
@@ -1332,7 +1345,9 @@ BacalaoParser {
 				if (repeat > 1) {
 					subArrResult = (subArrResult -> 1) ! repeat;
 				};
-				arr = arr.add(subArrResult -> hold);
+				dupl.do{
+					arr = arr.add(subArrResult -> hold);
+				};
 			}
 		};
 		// if (verbose) { "Returning %".format(arr).postln };
