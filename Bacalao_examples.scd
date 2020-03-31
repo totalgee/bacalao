@@ -53,6 +53,23 @@ b.p(\a, deg"<0 1> 2 3 <4 5 7>")
 // by using commas instead of spaces between angle brackets
 b.p(\a, deg"<0,1> 2 3 <4,5,7>")
 
+// You can specify sub-note repeats using the '*' notation,
+// and/or duplication using '!'.
+// Repeats occur within a single event, whereas duplication repeats events.
+b.p(\a, deg"0*3 4!2")                 // or deg"[0 0 0] 4 4"
+b.p(\a, deg"[0 2]*2 <4 7>!2")         // or deg"[[0 2] [0 2]] <4 7> <4 7>"
+b.p(\a, deg"[0 <1 2>]*3!2 <4 8 7>!2") // or deg"[[0 <1 2>] [0 <1 2>] [0 <1 2>]] [[0 <1 2>] [0 <1 2>] [0 <1 2>]] <4 8 7> <4 8 7>"
+
+// You can also use "Bjorklund" sequences, for repeats ('*') that
+// use different durations, trying to keep them as evenly spaced
+// in time as possible. Notation is (numEvents, numSteps, optionalOffset)
+// (Bjorklund sequence notation may also be used with duplication ('!'),
+// which is similar to repetition but different ;-)
+b.p(\a, deg"0*(3,8) 4*(5,8,-1)" << leg"0.25")
+b.p(\a, deg"[0*(3,8) -7 4*(5,8) 7]@2" << leg"0.25")
+b.p(\a, deg"[0!(3,7) -7 4!(5,7) 7]@2" << leg"0.25")
+b.p(\a, deg"1*(3,8) [2 3]*(2,3,1)" << leg"0.25")
+
 // Set variables that can be used when parsing pattern strings
 b.setParserVariable(\sd, 61)
 
@@ -62,8 +79,8 @@ b.p(\a, midinote"sd*4")
 b.setParserVariable(\bd, [47,48,59,60]);
 
 // The parser variable Dictionary is pushed to the current Environment
-// when you're working with Bacalao, so if you haven't switched Environment,
-// you can just use the simpler notation:
+// when you're working with Bacalao, so -- as long as you haven't switched
+// Environment, you can just use the simpler notation:
 ~bd;
 
 // When a variable has an Array, you can index it using "name:index" notation,
@@ -90,7 +107,7 @@ deg"0" // degree
 oct"4" // octave
 leg"1.1" // legato
 slow"2" // stretch -- not much of an abbreviation, but more similar to TidalCycles notation
-ins"\mySynth" // instrument (can also use \inst)
+ins"\mySynth" // instrument (can also use inst)
 
 // Rests are specified using tilde (~)
 deg"0 1 ~ 3".trace.play
@@ -183,9 +200,14 @@ a = Pbrown(-7, 7, 2, inf);
 (db"-12*8" << deg"a").trace.play
 
 (
-var amp = Pexprand(0.1, 0.8);
-var note = Pwrand([-4,-2,0,2,4,7], [1,2,3,2,1,0.5].normalizeSum, inf);
-(pan"[-0.5 0 0.5]*4@2" << note"note" <> amp"amp" <> leg"0.2").trace.play;
+// Be careful about naming conflicts with Environment variables, because
+// if the variable name is located as a key in the current Environment,
+// it will use that, instead of the local variable.
+// e.g. If you had defined ~amps = 0.5, it would use that value instead
+// of the local variable amps declared here.
+var amps = Pexprand(0.1, 0.8);
+var notes = Pwrand([-4,-2,0,2,4,7], [1,2,3,2,1,0.5].normalizeSum, inf);
+(pan"[-0.5 0 0.5]*4@2" << note"notes" <> amp"amps" <> leg"0.2").trace.play;
 )
 
 // There are some shortcut classes, for example Per() instead of Pexprand()
@@ -225,7 +247,6 @@ b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".reverse << inst"\ping")
 b.p(\melody, deg"0 1 2 3".mirror << inst"\ping")
 b.p(\melody, deg"0 1 2 3".mirror1 << inst"\ping")
 b.p(\melody, deg"0 1 2 3".mirror2 << inst"\ping")
-b.p(\melody, deg"0 1 2 3".mirror2 << inst"\ping")
 b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(2) << inst"\ping", 1)
 b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(-3) << inst"\ping", 1)
 b.p(\melody, deg"[0 4 5 6 7@4]".pyramid << inst"\ping")
@@ -238,7 +259,7 @@ b.once(\melody, deg"5 2 4 -1 0 6 4 ~" <> leg"Pexprand(0.2,1)" <> inst"\ping")
 b.once(\melody, deg"-1 5 4 4 0 2 ~ 6" <> leg"Pexprand(0.2,1)" <> oct"4" <> inst"\ping")
 
 // The cycle duration of a looping pattern will be calculated if possible.
-// However, you may specify a specific duration, which may either truncateç
+// However, you may specify a specific duration, which may either truncate
 // a longer pattern, or extend (with silence) a shorter one:
 b.p(\melody, deg"[0 1 2 3]") // the full pattern
 b.p(\melody, deg"[0 1 2 3]", 3) // extending it to three bars (one plus two of silence)
@@ -267,12 +288,14 @@ b.p(\melody -> 1, deg"[0 1 2 3 4 5 6 7]@2".degrade(0.75) << pan"0.7" << inst"\pi
 b.p(\melody -> 0, deg"[3 1 0 6 7 5 4 2]@2" << pan"-0.7" << inst"\ping", 2);
 b.p(\melody -> 1, deg"[3 0 7 4]@2" << oct"3" << pan"0.7" << inst"\ping", 2);
 
-// There is also a Bjorklund helper pattern to produce masking effects:
+// Besides the Bjorklund pattern notation "*(k,n,o)" or "!(k,n,o)",
+// there is also a way to use Bjorklund patterns to produce masking effects:
 b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping")
 b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping" << mask"Pbjork(5,8)")
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping" << mask"Pbjork(3,8,1)")
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(5,16)" << inst"\ping" )
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(7,16)" << inst"\ping" )
+// mask"Pbjork(...)" can be replaced by PmaskBjork(...) -- longer, but with auto-completion
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping" << PmaskBjork(3,8,1))
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(5,16)" << inst"\ping")
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << PmaskBjork(7,16) << inst"\ping")
 
 // You can adjust the volume of a pattern:
 b.db(\melody, -6)
@@ -287,7 +310,7 @@ b.db(\melody, -6)
 
 // You can apply effects to pattern instruments, and then pattern their parameters.
 b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"Pbrown(-0.7,0.7,0.3)" <> (instrument: \ping, amp: 0.5));
-b.fx(\melody -> 1, { arg in; BBandPass.ar((in * \overdrive.kr(1, 0.5)).softclip, \bpf.kr(400, 0.5), \bpq.kr(1, 0.5), 2)})
+b.fx(\melody -> 1, { arg in; BBandPass.ar((in * \overdrive.kr(1, 0.5)).softclip, \bpf.kr(400, 0.5), \bpq.kr(1, 0.5), 1)})
 b.fx(\melody -> 2, { arg in; CombL.ar(in.reverse, 1, 0.375 * b.tempo, 2) }, 0.4);
 b.fx(\melody -> 3, { arg in; JPverb.ar(in, 3) }, 0.3)
 
@@ -296,7 +319,9 @@ b.pset(\melody -> 101, bpf"80 2000" <> bpq"0.5" <> slow"4", 4)
 // Note there are new patterns (Psine, Psaw) to do time-based sine and saw waves
 b.pset(\melody -> 101, bpf"Psine.exprange(16,-0.25,80,2000)" <> (dur: 1/8, bpq: 1))
 b.pset(\melody -> 101, bpf"Psaw.exprange(4,0,80,2000)" <> (dur: 1/8, bpq: 1), 4)
+// Stop the "set" pattern
 b.pset(\melody -> 101, nil)
+// Set values (constant value, not a pattern)
 b.set(\melody, \bpf, 800); b.set(\melody, \bpq, 1)
 
 b.clear(\melody, 8)

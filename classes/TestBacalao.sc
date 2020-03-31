@@ -13,10 +13,19 @@ TestBacalao : UnitTest {
 	tearDown {
 	}
 
+	roundDurations { arg events;
+		^events.collect{ arg ev;
+			ev !? { ev[\dur] = ev[\dur].round(1e-9) };
+		}
+	}
+
 	compareEvents { arg resultPattern, expectedPattern, numEvents, message;
 		var resultEvents = resultPattern.asStream.nextN(numEvents, Event.default);
 		var expectedEvents = expectedPattern.asStream.nextN(numEvents, Event.default);
-		^this.assertEquals(resultEvents, expectedEvents, message);
+		^this.assertEquals(
+			this.roundDurations(resultEvents),
+			this.roundDurations(expectedEvents),
+			message);
 	}
 
 	approxCompareDurations { arg result, expected, message;
@@ -92,6 +101,24 @@ TestBacalao : UnitTest {
 		preProcessed = parse.preProcess(str);
 		this.compareEvents(preProcessed.interpret, expected, 31, "duplicated elements and arrays");
 
+		str = "deg\"1*(3,8,-1) [2 3]!(3,4,1)\"";
+		expected = Pbind(\degree, Pseq(1!3 ++ ([2, 3]!3).flat),
+			\dur, Pseq([0.05] ++ (0.075!2) ++ (0.1!2) ++ (0.2!2) ++ (0.1!2)));
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 10, "elements and arrays with Bjorklund sequences 1");
+
+		str = "deg\"[1 [2 3]!(5,7)]\"";
+		expected = Pbind(\degree, Pseq([1] ++ ([2, 3]!5).flat),
+			\dur, Pseq([0.125] ++ (((0.125!2) ++ (0.0625!2))!2 ++ (0.0625!2)).flat));
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 12, "elements and arrays with Bjorklund sequences 2");
+
+		str = "deg\"[1 [2 3]]*(2,5)@0.5!(3,4) 5\"";
+		expected = Pbind(\degree, Pseq(([1,2,3]!6).flat ++ 5),
+			\dur, Pseq([1, 1.5, 1, 1.5, 2, 3] *.x [2,1,1]/60  ++ (1/3)));
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 20, "elements and arrays with Bjorklund sequences 3");
+
 		str = "deg\"1 2 3 4 5 6 7 8\" << amp\"Pn(Pseries(0.1,0.1,3))\"";
 		expected = Pbind(\degree, Pseq((1..8)), \amp, Pn(Pseries(0.1,0.1,3)), \dur, 0.125);
 		preProcessed = parse.preProcess(str);
@@ -121,7 +148,7 @@ TestBacalao : UnitTest {
 		str = "deg'bacalao ' << amp'94041377'";
 		expected = Pbind('degree', Pseq([ 1, 0, 2, 0, 11, 0, 14, Rest(1) ], 1.0),
 			'dur', 0.125,
-			'amp', Pseq([1, 0.5, 0.1, 0.5, 0.2, 0.4, 0.8, 0.8], 1));
+			'amp', Pseq([0.9, 0.4, 0, 0.4, 0.1, 0.3, 0.7, 0.7], 1));
 		preProcessed = parse.preProcess(str);
 		this.compareEvents(preProcessed.interpret, expected, 9, "char patterns");
 	}
@@ -364,8 +391,14 @@ TestBacalao : UnitTest {
 			[ [ 52.reciprocal, 1/6 ], [ 26.reciprocal, 1/6 ], [ 26.reciprocal*1.5, 1/6 ], [ 0.48076923076923, 1/6 ], [ 0.98076923076923, 1/6 ], [ 1.0, 1/6 ] ],
 			"amp pattern with letters", 0);
 		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('amp', "0369")),
-			[ [ 0.1, 0.25 ], [ 0.4, 0.25 ], [ 0.7, 0.25 ], [ 1.0, 0.25 ] ],
+			[ [ 0, 0.25 ], [ 0.3, 0.25 ], [ 0.6, 0.25 ], [ 0.9, 0.25 ] ],
 			"amp pattern with digits");
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('pan', "aAbmzZ")),
+			[ [ -1, 1/6 ], [ -1, 1/6 ], [ -1 + 12.5.reciprocal, 1/6 ], [ -0.04, 1/6 ], [ 1, 1/6 ], [ 1.0, 1/6 ] ],
+			"pan pattern with letters", 0);
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('pan', "0369")),
+			[ [ -1, 0.25 ], [ -1/3, 0.25 ], [ 1/3, 0.25 ], [ 1, 0.25 ] ],
+			"pan pattern with digits");
 
 		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "01/234")),
 			[ [ 0, 1/2 ], [ 1, 1/2 ], [ 2, 1/3 ], [ 3, 1/3 ], [ 4, 1/3 ] ],
@@ -423,13 +456,35 @@ TestBacalao : UnitTest {
 			str = "note~weird'ab cacbc'";
 			expected = Pbind('note', Pseq([ 0, 7, Rest(), 5, 0, -3, 7, 3 ], 1), 'dur', 0.125);
 			this.compareEvents(parse.preProcess(str).interpret, expected, 9, "function in char variable lookup");
-		}.value;
 
+			str = "deg'c' << amp'4'";
+			expected = Pbind('degree', 2, 'dur', 1, 'amp', 0.4);
+			this.compareEvents(parse.preProcess(str).interpret, expected, 2, "single char patterns");
+
+			str = "deg~weird'b' << amp~weird'a'";
+			expected = Pbind('degree', Pn(7, 1), 'dur', 1, 'amp', Pn(0, 1));
+			this.compareEvents(parse.preProcess(str).interpret, expected, 2, "single char patterns w/variable lookup");
+		}.value;
 	}
 
 	test_shortKeys {
 		this.assertEquals(parse.resolveAbbrev("deg"), \degree, "deg as string");
 		this.assertEquals(parse.resolveAbbrev(\deg), \degree, "deg");
 	}
+
+	test_helperClasses {
+		var str = "deg\"0 1 2 3 4 5 6 7\" << PmaskBjork(3,8)";
+		var expected = Pbind(\degree, Pseq((0..7)),
+			\dur, 0.125, \mask, Pseq([1, Rest(0), Rest(0), 1, Rest(0), Rest(0), 1, Rest(0)]));
+		var preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 9, "Bjorklund masking 1");
+
+		str = "deg\"0 1 2 3 4 5 6 7\" << amp\"1 0.25@7\" << inst\"\\ping\" << PmaskBjork(3,8)";
+		expected = Pbind(\degree, Pseq((0..7)), \amp, Pseq([1] ++ (0.25!7)), \instrument, \ping,
+			\dur, 0.125, \mask, Pseq([1, Rest(0), Rest(0), 1, Rest(0), Rest(0), 1, Rest(0)]));
+		preProcessed = parse.preProcess(str);
+		this.compareEvents(preProcessed.interpret, expected, 9, "Bjorklund masking 2");
+	}
+
 
 }

@@ -41,7 +41,37 @@ Bacalao {
 		);
 		chords.keysValuesDo{ arg k, v;
 			Bacalao.setParserVariable(k, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[-7,0,0]]);
-		}
+		};
+
+		{
+			var freq = ();
+			this.setDictChars(freq, $a, $z, (_+60).midicps);
+			this.setDictChars(freq, $A, $Z, (_+36).midicps);
+			this.setDictChars(freq, $0, $9, (_+60).midicps);
+			Bacalao.setParserVariable('freq', freq);
+		}.value;
+		{
+			var amp = ();
+			this.setDictChars(amp, $a, $z, _.lincurve(0,25, 0,1, 1));
+			this.setDictChars(amp, $A, $Z, _.lincurve(0,25, 0,1, -1));
+			this.setDictChars(amp, $0, $9, _.lincurve(0,9, 0,1, 0));
+			Bacalao.setParserVariable('amp', amp);
+		}.value;
+		{
+			var pan = ();
+			this.setDictChars(pan, $a, $z, _.linlin(0,25, -1,1));
+			this.setDictChars(pan, $A, $Z, _.linlin(0,25, -1,1).cubed);
+			this.setDictChars(pan, $0, $9, _.linlin(0,9, -1,1));
+			Bacalao.setParserVariable('pan', pan);
+		}.value;
+	}
+
+	*setDictChars { arg dict, start = $a, end = $z, remapFunc = { arg i, size; i.lincurve(0,size-1, 0, 1, 4) };
+		var range = (start.ascii..end.ascii);
+		range.do{ arg ch, i;
+			dict.put(ch.asAscii.asSymbol, remapFunc.value(i, range.size))
+		};
+		^dict
 	}
 
 	*prVSTPluginInstalled {
@@ -606,7 +636,9 @@ Bacalao {
 
 		// Stretch it so the durations in bars are converted to beats on our clock
 		if (pattern.notNil) {
-			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern);
+			// We set default mask 1 so we can use it for triggering with pset
+			// (goes to 0/Rest when using PmaskBjork or degrade).
+			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern << Pbind(\mask, 1));
 		};
 
 		if (loopDur.notNil) {
@@ -716,22 +748,25 @@ BacalaoParser {
 		var labelWithMods;
 		var elemWithMods;
 		var arrayWithMods;
+		// Number or Bjorklund sequence args e.g. (3,8) or (7,16,1)
+		var unsignedIntOrBjork;
 		numberInt = "-?" ++ unsignedInt;
+		unsignedIntOrBjork = unsignedInt ++ "|\\(" ++ unsignedInt ++ "," ++ unsignedInt ++ "(?:," ++ numberInt ++ ")?\\)";
 		reCharEventsPerBar = "^(" ++ unsignedInt ++ ")@";
 		numberFloat = "-?" ++ unsignedFloat;
 		// elemModifiers must be in the correct order (optional repeat, then optional hold, then optional duplicate)
-		elemModifiers = "(?:\\*(" ++ unsignedInt ++ "))?(?:@(" ++ unsignedFloat ++ "))?(?:!(" ++ unsignedInt ++ "))?";
-		// [ overallMatch, balancedArray, arrayRepeat, arrayHold ]
+		elemModifiers = "(?:\\*(" ++ unsignedIntOrBjork ++ "))?(?:@(" ++ unsignedFloat ++ "))?(?:!(" ++ unsignedIntOrBjork ++ "))?";
+		// [ overallMatch, balancedArray, arrayRepeat, arrayHold, arrayDuplicate ]
 		balancedArray = "(?:(" ++ "\\[(?>[^][]|(?1))*\\])" ++ elemModifiers ++ ")";
 		number = "(?:" ++ numberFloat ++ ")|(?:" ++ rest ++ ")";
 		numberWithMods = "(?:(" ++ number ++ ")" ++ elemModifiers ++ ")";
 		labelWithMods = "(?:(" ++ label ++ ")" ++ elemModifiers ++ ")";
 		elemWithMods = "(?:(" ++ elemWithoutMods ++ ")" ++ elemModifiers ++ ")";
-		// [ overallMatch, simpleElem, arrayElem, arrayRepeat, arrayHold, unrecognized ]
+		// [ overallMatch, simpleElem, arrayElem, arrayRepeat, arrayHold, arrayDuplicate, unrecognized ]
 		arrayElem = "(" ++ nonArraySpace ++ ")" ++ "|(?:(" ++ "[[](?>[^\][]|(?2))*[\]])" ++ elemModifiers ++ ")|([^[:space:]]+)";
-		// [ overallMatch, num, numRepeat, numHold, labelElem, labelRepeat, labelHold ]
+		// [ overallMatch, num, numRepeat, numHold, numDuplicate, labelElem, labelRepeat, labelHold, labelDuplicate ]
 		simpleElemPartial = "(?:(?:" ++ numberWithMods ++ ")|(?:" ++ labelWithMods ++ "))";
-		// [ overallMatch, elem, repeat, hold ]
+		// [ overallMatch, elem, repeat, hold, duplicate ]
 		simpleElem = "^(?:" ++ elemWithMods ++ ")$";
 		patternValueArg = "^\\s*(?:(?:" ++ balancedArray ++ ")|(?:" ++ numberWithMods ++ "))\\s*$";
 
@@ -899,6 +934,7 @@ BacalaoParser {
 						};
 						repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
 						hold = if (hold.isEmpty) { 1 } { hold.asFloat };
+						// Note: we don't support Bjorklund e.g. (3,8) inside angle brackets
 						dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
 						if (hold != 1 or: { repeat != 1 }) {
 							Error("We don't support hold or repeat inside alternating <> elements, only '!' duplicate").throw
@@ -1018,7 +1054,8 @@ BacalaoParser {
 				'note', [ 0, -24, (_ + 1) ],
 				'midinote', [ 60, 36, (_ + 1) ],
 				'freq', [ 60.midicps, 36.midicps, (_ * 1.midiratio) ],
-				'amp', [ 26.reciprocal*0.5, 26.reciprocal, (_ + 26.reciprocal), 10.reciprocal, (_ + 10.reciprocal) ],
+				'amp', [ 26.reciprocal*0.5, 26.reciprocal, (_ + 26.reciprocal), 0, (_ + 10.reciprocal) ],
+				'pan', [ -1, -1, (_ + 12.5.reciprocal), -1, (_ + 4.5.reciprocal) ],
 				[ 0, 0, (_ + 1) ] // Default values
 			);
 			result = case
@@ -1146,6 +1183,10 @@ BacalaoParser {
 					var numCyclesRequired = 1.0;
 					replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
 				} {
+					if (elems[0].isKindOf(Association)) {
+						elems[0] = "PnsymRest(Pseq(%), ~%)".format(elems.collect{|e| e.value}.join.cs, elems.first.key);
+					};
+
 					if (durs[0] === 1) {
 						// In the case of a single entry at the top level (and no array braces)
 						// just return a single value repeatedly, with no duration.
@@ -1271,6 +1312,22 @@ BacalaoParser {
 		^str !? { str.asSymbol }
 	}
 
+	*prGetRepeatsArray { arg repeatStr;
+		^case
+		{ repeatStr.isEmpty } {
+			#[1]
+		}
+		{ repeatStr.first == $( } {
+			var k, n, shift;
+			#k, n, shift = repeatStr.trim("()").split($,).asInteger;
+			shift = shift ? 0;
+			Bjorklund2(k, n).rotate(-1 * shift)
+		}
+		{
+			1 ! repeatStr.asInteger
+		}
+	}
+
 	// Input:
 	//   A string containing an array, possibly including repeat multipliers
 	//   and hold elements, and sub-arrays.
@@ -1321,32 +1378,32 @@ BacalaoParser {
 					if (elem.isEmpty) {
 						Error("There is no array element: %".format(full)).throw
 					};
-					repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
+					repeat = this.prGetRepeatsArray(repeat);
 					hold = if (hold.isEmpty) { 1 } { hold.asFloat };
-					dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
+					dupl = this.prGetRepeatsArray(dupl);
 					// "Adding a result: %".format(elem).postln;
-					if (repeat > 1) {
-						elem = (elem -> 1) ! repeat;
+					if (repeat != #[1]) {
+						elem = repeat.collect{ arg r; (elem -> r) };
 					};
-					dupl.do{
-						arr = arr.add(elem -> hold);
+					dupl.do{ arg d;
+						arr = arr.add(elem -> (hold * d));
 					};
 				} {
 					Error("Invalid array entry: %".format(elem.cs)).throw;
 				}
 			} {
-				var repeat = if (subArrRepeat.isEmpty) { 1 } { subArrRepeat.asInteger };
+				var repeat = this.prGetRepeatsArray(subArrRepeat);
 				var hold = if (subArrHold.isEmpty) { 1 } { subArrHold.asFloat };
-				var dupl = if (subArrDupl.isEmpty) { 1 } { subArrDupl.asInteger };
+				var dupl = this.prGetRepeatsArray(subArrDupl);
 				var subArrResult;
 				subArr = subArr.drop(1).drop(-1); // get rid of outer brackets
 				// if (verbose) { "Will parseArray recursively on %".format(subArr).postln };
 				subArrResult = this.parseArray(subArr);
-				if (repeat > 1) {
-					subArrResult = (subArrResult -> 1) ! repeat;
+				if (repeat != #[1]) {
+					subArrResult = repeat.collect{ arg r; (subArrResult -> r) };
 				};
-				dupl.do{
-					arr = arr.add(subArrResult -> hold);
+				dupl.do{ arg d;
+					arr = arr.add(subArrResult -> (hold * d));
 				};
 			}
 		};
@@ -1430,14 +1487,15 @@ BacalaoParser {
 }
 
 // Bake a result into a string and save it to the clipboard for later pasting
+// Use joinWith = "" for character strings ( e.g. Bake(rrand(0,9!8), "") )
 Bake {
-	*new { arg x;
+	*new { arg x, joinWith = Char.space;
 		var bakedText = {
 			if (x.isKindOf(Pattern)) {
 				x = x.asStream.nextN(64).reject(_.isNil);
 			};
 			if (x.isKindOf(Collection) and: { x.isKindOf(String).not }) {
-				x = x.join($ );
+				x = x.join(joinWith);
 			};
 			x.cs.trim("\"")
 		}.value;
@@ -1471,7 +1529,7 @@ Bake {
 // A Pattern returning ones for "hits" in Bjorklund's Euclidean algorithm and Rests for the "misses".
 Pbjork {
 	*new { arg k, n, offset=0;
-		^Pbjorklund(k, n, inf, offset:offset).collect{|e| if (e==0) { Rest() } { e }};
+		^Pbjorklund(k, n, inf, offset:offset).collect{|e| if (e==0) { Rest(0) } { e }};
 	}
 }
 
@@ -1544,7 +1602,7 @@ Per {
 // Modify an Event Pattern to return Rests based on a weighted coin toss
 +Pattern {
 	degrade { arg prob = 0.5, randSeed;
-		var p = this.collect{ |ev| prob.coin.if{ ev } { ev.copy.put(\mask, Rest()) }};
+		var p = this.collect{ |ev| prob.coin.if{ ev } { ev.copy.put(\mask, Rest(0)) }};
 		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p }
 	}
 }
