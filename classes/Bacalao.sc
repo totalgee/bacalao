@@ -8,6 +8,7 @@ Bacalao {
 	var <quant;
 	// Collection of 2-element Arrays [VSTPluginController, NodeProxy], looked up by "name" (a Symbol)
 	var <vstDict;
+	var <spatial; // Settings for spatialization (BacalaoSpatialSettings)
 
 	*initClass {
 		parse = BacalaoParser;
@@ -27,7 +28,7 @@ Bacalao {
 		Bacalao.prSetupSynthDefs();
 
 		Bacalao.config();
-		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, ()).initLibrary.start.prSetupCmdPeriod.push;
+		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), nil).initLibrary.start.prSetupCmdPeriod.push;
 	}
 
 	*config {
@@ -86,6 +87,7 @@ Bacalao {
 	}
 
 	*prSetupSynthDefs {
+		var playFunc;
 		if (this.prVSTPluginInstalled) {
 			SynthDef(\bacalao_vsti, {arg out = 0, pan = 0, gate=1, fadeTime=1, bypass=0;
 				// VST instruments usually don't have inputs
@@ -95,19 +97,38 @@ Bacalao {
 			}).add;
 		};
 
-		SynthDef(\sample1, { arg out=0, buf, rate=1, amp=0.1, pan=0, start=0.0, length=1.0;
-			var sig, env;
-			sig = PlayBuf.ar(1, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
-			env = EnvGen.ar(Env.linen(0.01, length, 0.01), doneAction: 2);
-			sig = sig * env;
+		playFunc = { arg numChannels, withGate;
+			var buf = \buf.kr(0);
+			var rate = \rate.kr(1);
+			var start = \start.kr(0);
+			var length = \length.kr(1);
+			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
+			var env = if (withGate) {
+				EnvGen.ar(Env.linen(0.01, length / rate, 0.01), doneAction: Done.none) *
+				EnvGen.ar(Env.asr(0.01, 1, 0.01), \gate.kr(1), doneAction: Done.freeSelf);
+			} {
+				EnvGen.ar(Env.linen(0.01, length / rate, 0.01), doneAction: Done.freeSelf);
+			};
+			sig * env;
+		};
+
+		SynthDef(\sample1, { arg out=0, amp=0.1, pan=0;
+			var sig = playFunc.(1, /* withGate */ false);
 			Out.ar(out, Pan2.ar(sig, pan, amp));
 		}).add;
 
-		SynthDef(\sample2, { arg out=0, buf, rate=1, amp=0.1, pan=0, start=0.0, length=1.0;
-			var sig, env;
-			sig = PlayBuf.ar(2, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
-			env = EnvGen.ar(Env.linen(0.01, length, 0.01), doneAction: 2);
-			sig = sig * env;
+		SynthDef(\sample1_gate, { arg out=0, amp=0.1, pan=0;
+			var sig = playFunc.(1, /* withGate */ true);
+			Out.ar(out, Pan2.ar(sig, pan, amp));
+		}).add;
+
+		SynthDef(\sample2, { arg out=0, amp=0.1, pan=0;
+			var sig = playFunc.(2, /* withGate */ false);
+			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
+		}).add;
+
+		SynthDef(\sample2_gate, { arg out=0, amp=0.1, pan=0;
+			var sig = playFunc.(2, /* withGate */ true);
 			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
 		}).add;
 	}
@@ -128,8 +149,9 @@ Bacalao {
 	}
 
 	// This allows the key alone or with a colon to sub-index (e.g. 'bd:3')
-	*lookupVariable { arg key;
-		var parserVariables = this.vars;
+	// (See also PnsymRest.prLookupVariable)
+	*lookupVariable { arg key, dict;
+		var parserVariables = dict ?? { this.vars };
 		var elem = key.asString;
 		^parserVariables !? {
 			var variable, index, substitute;
@@ -138,7 +160,7 @@ Bacalao {
 			#variable, index = elem.split($:);
 			substitute = parserVariables[variable.asSymbol];
 			substitute !? {
-				if (index.notNil) {
+				if (index.notNil and: { substitute.isSequenceableCollection }) {
 					if (index == "r" and: { substitute.size > 1 }) {
 						Prand(substitute.asArray,inf)
 					} {
@@ -151,8 +173,13 @@ Bacalao {
 		}
 	}
 
-	lookupVariable { arg key;
-		^Bacalao.lookupVariable(key);
+	boot {
+		server.boot;
+	}
+
+	lookupVariable { arg key, dict;
+		// dict may be nil (will use Bacalao vars)
+		^Bacalao.lookupVariable(key, dict);
 	}
 
 	*printVariables {
@@ -221,6 +248,8 @@ Bacalao {
 				vst.close;
 			};
 			vstDict.clear;
+
+			this.spatialFree(playDefault: false);
 		}
 	}
 
@@ -245,10 +274,22 @@ Bacalao {
 		}
 	}
 
+	prGetNamesAndProxies {
+		^vstDict.collect(_.last) ++ (Ndef.all[server.name] ?? ());
+	}
+
+	defs {
+		var namesAndProxies = this.prGetNamesAndProxies;
+		^namesAndProxies.asKeyValuePairs.clump(2).select{ arg kv;
+			kv[1].numChannels.notNil
+		}.collect(_.first)
+	}
+
 	gui {
-		var w = Window().bounds_(Rect(1310, 100, 450, 900)).front.alwaysOnTop_(true);
-		var namesAndProxies = vstDict.collect(_.last) ++ (Ndef.all[server.name] ?? ());
+		var w = Window("Bacalao GUI", scroll: true).bounds_(Rect(1310, 100, 450, 900)).front.alwaysOnTop_(true);
+		var namesAndProxies = this.prGetNamesAndProxies;
 		w.addFlowLayout;
+		w.view.hasHorizontalScroller_(false).background_(Color(0.2,0.2,0.4));
 		namesAndProxies.keysValuesDo{ arg name, nd;
 			if (nd.numChannels.notNil) {
 				StaticText(w, 50@20).string_(name);
@@ -264,7 +305,11 @@ Bacalao {
 		if (defName.isKindOf(Association)) {
 			#defName, slot = [defName.key, defName.value];
 		};
-		this.prChangePattern(defName.asSymbol, slot, pattern, nil, quant);
+		if (pattern.isKindOf(Pattern)) {
+			this.prChangePattern(defName.asSymbol, slot, pattern, nil, quant);
+		} {
+			this.prSetSource(defName.asSymbol, slot, pattern, quant);
+		};
 	}
 
 	// Could be considered "pattern" or "play"... Set a looping pattern playing
@@ -278,7 +323,11 @@ Bacalao {
 		if (defName.isKindOf(Association)) {
 			#defName, slot = [defName.key, defName.value];
 		};
-		this.prChangePattern(defName.asSymbol, slot, pattern, dur, quant, role);
+		if (pattern.isKindOf(Pattern)) {
+			this.prChangePattern(defName.asSymbol, slot, pattern, dur, quant, role);
+		} {
+			this.prSetSource(defName.asSymbol, slot, pattern, quant);
+		};
 	}
 
 	set { arg defName, control, valueOrFunc;
@@ -354,7 +403,7 @@ Bacalao {
 			{ \sample2 })
 		};
 		// Here, the 'dur' should be in cycles, not beats
-		^Pbind(\instrument, inst, \buf, buf, \length, origGrainDur/rate, \rate, rate, \start, Pseq(starts), \dur, (1/pieces), \stretch, bars);
+		^Pbind(\instrument, inst, \buf, buf, \length, origGrainDur, \rate, rate, \start, Pseq(starts), \dur, (1/pieces), \stretch, bars);
 	}
 
 	prVstPrint { arg message, conditionFunc, onlyWithPresets, extraVstPluginSearchPath;
@@ -423,22 +472,26 @@ Bacalao {
 						VSTPluginController(synth).debug("New '%'".format(defName))
 					};
 					vstDict[defName] = [ vstController, vstProxy ];
-					vstController.open(vstName, editor: true, action: {
-						"Opened VSTPluginController for % with %".format(defName, vstName).postln;
-						vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
-						if (programPath.notNil) {
-							if (bankAndProgram.notNil) {
-								"Both programPath and bankAndProgram were specified...only using programPath".warn;
-							};
-							this.prVstRead(vstController, programPath);
-						} {
-							if (bankAndProgram.isKindOf(Association)) {
-								this.vstBankProgram(defName, bankAndProgram.key, bankAndProgram.value);
-							} {
+					vstController.open(vstName, editor: true, action: { arg vstController, success;
+						if (success) {
+							"Opened VSTPluginController for % with %".format(defName, vstName).postln;
+							vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
+							if (programPath.notNil) {
 								if (bankAndProgram.notNil) {
-									"Expected bankAndProgram to be an Association (bank -> program), e.g. (3 -> 22)".warn;
+									"Both programPath and bankAndProgram were specified...only using programPath".warn;
+								};
+								this.prVstRead(vstController, programPath);
+							} {
+								if (bankAndProgram.isKindOf(Association)) {
+									this.vstBankProgram(defName, bankAndProgram.key, bankAndProgram.value);
+								} {
+									if (bankAndProgram.notNil) {
+										"Expected bankAndProgram to be an Association (bank -> program), e.g. (3 -> 22)".warn;
+									}
 								}
 							}
+						} {
+							("Unable to open VST: " ++ vstName).error;
 						}
 					});
 				});
@@ -448,7 +501,16 @@ Bacalao {
 	}
 
 	// free does clear plus removes the VST instrument (if there is one)
-	free { arg defName, fadeTime=0;
+	free { arg defNameOrNames, fadeTime = 0;
+		if (defNameOrNames.isSequenceableCollection.not or: {defNameOrNames.isString }) {
+			defNameOrNames = defNameOrNames.asArray;
+		};
+		defNameOrNames.do{ arg defName;
+			this.prFree(defName, fadeTime)
+		};
+	}
+
+	prFree { arg defName, fadeTime=0;
 		var vstCtl;
 		this.clear(defName = defName.asSymbol, fadeTime);
 
@@ -463,6 +525,7 @@ Bacalao {
 			// Don't schedule on the Bacalao clock, because fadeTime should be in "wall" clock time
 			SystemClock.sched(fadeTime ? 0 + server.latency + extraTime, {
 				"Freeing VST %".format(defName).postln;
+				this.despatialize(defName, playDefault: false);
 				vstProxy.clear();
 				vstCtl.close;
 			});
@@ -547,7 +610,16 @@ Bacalao {
 		}
 	}
 
-	clear { arg defName, fadeTime=1;
+	clear { arg defNameOrNames, fadeTime = 1;
+		if (defNameOrNames.isSequenceableCollection.not and: {defNameOrNames.isString.not }) {
+			defNameOrNames = defNameOrNames.asArray;
+		};
+		defNameOrNames.do{ arg defName;
+			this.prClear(defName, fadeTime)
+		};
+	}
+
+	prClear { arg defName, fadeTime=1;
 		// Clear an existing Ndef (and ignore everything else)
 		var vst = this.vst(defName = defName.asSymbol);
 		var ndef = this.proxy(defName);
@@ -580,6 +652,7 @@ Bacalao {
 			} {
 				// For regular (SC Synth-sourced) proxies, we can go ahead
 				// and get rid of the whole thing.
+				this.despatialize(defName, playDefault: false);
 				ndef.clear();
 			};
 			nil
@@ -619,7 +692,7 @@ Bacalao {
 				pdef.debug("'" ++ defName ++ "' source (slot " ++ slotNum ++ ") still nil...removing");
 				pdef.remove;
 				if (this.vst(defName).isNil) {
-					Ndef(defName).debug("Removing Ndef slot").removeAt(slotNum, 0);
+					this.proxy(defName).debug("Removing Ndef slot").removeAt(slotNum, 0);
 				}
 			}
 		}
@@ -705,6 +778,36 @@ Bacalao {
 			ndef.play;
 		}
 	}
+
+	prSetSource { arg defName, slot, source, quant;
+		// Use this when setting a NodeProxy, single Event or Function
+		// as source of the NodeProxy (not PatternProxy).
+		var replacePatterns = slot.isNil;
+		// Note we don't use +/+ here for cross-platform reasons..we always want joining with '/'
+		var ndef, vst = this.vst(defName = defName.asSymbol);
+		if (vst.notNil and: { replacePatterns || slot == 0 }) {
+			"Can't replace slot 0 source of a VST proxy".warn;
+			^this;
+		};
+
+		// The quantization until this point has been in bars, not beats
+		quant = (quant ?? { #[1, 0] }) * clock.beatsPerBar;
+		ndef = this.proxy(defName).clock_(clock).quant_(quant);
+		if (replacePatterns) {
+			// Set the source of other slots to nil (uses current Quant)
+			this.prClearOtherPatternSlots(defName, except: nil);
+		};
+
+		"Setting % source %".format(defName, slot ? 0).postln;
+		ndef[slot ? 0] = source;
+		if (ndef.isMonitoring.not) {
+			if (verbose) {
+				"Playing Ndef(%)".format(defName).postln
+			};
+			ndef.play(out: 0, group: ndef.homeServer.defaultGroup);
+		}
+	}
+
 }
 
 
@@ -713,8 +816,8 @@ Bacalao {
 BacalaoParser {
 	classvar eventAbbrevs;
 	const unsignedInt = "\\d+";
-	const eventPattern = "(?:[^a-z]*|(\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
-	const <charPattern = "(?:[^a-z]*|(\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
+	const eventPattern = "(?:[^a-z@]*|(@|\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
+	const <charPattern = "(?:[^a-z@]*|(@|\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
 	const nonArraySpace = "[^[:space:]\\][]+";
@@ -798,6 +901,7 @@ BacalaoParser {
 			mtr: \mtranspose,
 			oct: \octave,
 			sca: \scale,
+			scl: \scale,
 			sus: \sustain,
 			vel: \velocity,
 			slow: \stretch,
@@ -858,27 +962,29 @@ BacalaoParser {
 
 		// Replace Bacalao parser variables with their values
 		^elems.collect{ arg elem;
-			if (parserVariables.notNil) {
-				var variable, index, substitute;
-				// Allow (e.g.) "bd:5"-style indexing, or simply "bd" (equivalent to "bd:0")
-				// Also allow "bd:r", which will choose a random value from the collection.
-				#variable, index = elem.split($:);
-				substitute = parserVariables[variable.asSymbol];
-				if (substitute.notNil) {
-					if (index.notNil) {
-						if (index == "r" and: { substitute.size > 1 }) {
-							"Prand(%,inf)".format(substitute.asArray)
-						} {
-							substitute.asArray.wrapAt(index.asInteger)
-						}
-					} {
-						substitute.first
-					}
-				} {
-					resolveChord.value(elem)
-				}
+			var substitute = Bacalao.lookupVariable(elem, parserVariables);
+			if (substitute.isKindOf(Prand)) {
+				// The "elem" must convert to a string with no spaces
+				substitute = substitute.cs.reject(_.isSpace);
+			};
+			substitute ?? { resolveChord.value(elem) };
+		}
+	}
+
+	*prVariableNameToString { arg elem;
+		^if (elem.size == 1) {
+			// Return a Char, not Symbol, for one-letter names,
+			// otherwise ChordSymbol screws up the lookup by resolving
+			// it as a "note" when embedding the Symbol.
+			// (see ChordSymbol overload for Symbol.embedInStream)
+			elem.first.cs;
+		} {
+			if (elem.beginsWith("ALTERNATE")) {
+				// Don't put quotes around alternates, which are code
+				// that will be substituted later.
+				elem
 			} {
-				resolveChord.value(elem)
+				elem.asSymbol.cs
 			}
 		}
 	}
@@ -902,18 +1008,37 @@ BacalaoParser {
 			// required to see everything in the pattern is the least common multiple
 			// of all alternate counts.
 
+			if (patternType == '@' and: { optVariableName.isEmpty }) {
+				Error("Can't use default (non-variable) lookup with string pattern").throw;
+			};
+
 			// Replace rests
 			// @todo Be more selective, allowing env. variables such as "[~foo <1 ~bar>]"
-			patternString = patternString.replace("~", "Rest()");
+			if (optVariableName.isEmpty) {
+				// In the case of variable/namespace lookup, then ~ is allowed;
+				// it is interpreted as "Rest" by the PnsymRest class.
+				patternString = patternString.replace("~", this.prGetRestString(patternType));
+			} {
+				if (currentEnvironment[optVariableName.asSymbol].isKindOf(Dictionary).not) {
+					Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
+				};
+			};
 
 			// First try to split on comma-separated elements in angle brackets (chords)
 			this.findChord(patternString).reverseDo{ arg m;
 				var alternateElements = BacalaoParser.splitSimplify(m[1], $,);
 				if (alternateElements.size > 1) {
 					// Replace Bacalao parser variables with their values
-					alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
+					if (optVariableName.isEmpty) {
+						alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
+					} {
+						alternateElements = alternateElements.collect{ arg e;
+							this.prVariableNameToString(e);
+						};
+					};
+
 					patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
-					replacements = replacements.add("[%]".format(alternateElements.join($,)));
+					replacements = replacements.add("Ptuple([%])".format(alternateElements.join($,)));
 				};
 			};
 
@@ -946,14 +1071,20 @@ BacalaoParser {
 				}.flatten;
 
 				// Replace Bacalao parser variables with their values
-				alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
+				if (optVariableName.isEmpty) {
+					alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
+				} {
+					alternateElements = alternateElements.collect{ arg e;
+						this.prVariableNameToString(e);
+					};
+				};
 				numAlternates = numAlternates.add(alternateElements.size);
 				patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
-				replacements = replacements.add("Pseq([%],inf)".format(alternateElements.join($,)));
+				replacements = replacements.add("Ppatlace([%],inf)".format(alternateElements.join($,)));
 			};
 
 			{
-				// var patternArray = this.splitSimplify(patternString.replace("~", "Rest()"));
+				// var patternArray = this.splitSimplify(patternString.replace("~", this.prGetRestString(patternType)));
 				var patternArray = this.parseArray(patternString);
 				var elemsAndDurs = {
 					if (patternArray.size > 1) {
@@ -967,30 +1098,62 @@ BacalaoParser {
 				var elems, durs, resolveChord;
 				#elems, durs = elemsAndDurs.flop;
 
-				// Replace Bacalao parser variables with their values
-				elems = this.prResolveVariables(elems, patternType, optVariableName);
+				// Replace Bacalao parser variables with their values, unless we're
+				// using an explicit "namespace" variable.
+				if (optVariableName.isEmpty) {
+					elems = this.prResolveVariables(elems, patternType, optVariableName);
+				};
 
 				// *Don't* convert strings to symbols here...this allows you to evaluate
 				// variables (e.g. n = Pwhite(0,7,1); deg"n*4") and arbitrary code in patterns!
 				// elems = elems.collect{ |elem| "^[A-Za-z]+$".matchRegexp(elem).if(elem.asSymbol.cs, elem) };
 				if (elems.size > 1) {
-					var longElemStr = String.streamContents({ arg stream;
-						elems.printOn(stream); });
+					var numCyclesRequired = numAlternates.reduce(\lcm) ? 1.0;
+					var longElemStr = if (optVariableName.isEmpty) {
+						var variables = String.streamContents({ arg stream;
+							elems.printOn(stream); });
+						"Ppatlace(%, %)".format(variables, numCyclesRequired);
+					} {
+						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+						"%(Ppatlace([%], %), ~%)".format(pnsym, elems.collect{|e|
+							if (e.beginsWith("ALTERNATE"))
+							{ e }
+							{ this.prVariableNameToString(e) }
+						}.join($,), numCyclesRequired, optVariableName);
+					};
 					var longDursStr = String.streamContents({ arg stream;
 						durs.printOn(stream); });
 					//var longDursStr = String.streamContents({ arg stream;
 					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
-					var numCyclesRequired = numAlternates.reduce(\lcm) ? 1.0;
-					replaceStr = "Pbind('%', Ppatlace(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
+					if (patternType == '@') {
+						replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pn(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
+					} {
+						replaceStr = "Pbind('%', %, 'dur', Pseq(%, %))".format(patternType, longElemStr, longDursStr, numCyclesRequired);
+					}
 				} {
+					var elemStr = if (optVariableName.isEmpty) {
+						String.streamContents({ arg stream; elems[0].printOn(stream); });
+					} {
+						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+						var e = this.prVariableNameToString(elems[0].value);
+						"%(Pseq([%]), ~%)".format(pnsym, e, optVariableName);
+					};
 					if (durs[0] === 1) {
 						// In the case of a single entry at the top level (and no array braces)
 						// just return a single value repeatedly, with no duration.
-						// IF you want a single event that lasts one cycle, use
+						// If you want a single event that lasts one cycle, use
 						// "[0]" or "0@1"
-						replaceStr = "Pbind('%', %)".format(patternType, elems[0]);
+						if (patternType == '@') {
+							replaceStr = "Pn(%)".format(elemStr);
+						} {
+							replaceStr = "Pbind('%', %)".format(patternType, elemStr);
+						}
 					} {
-						replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elems[0], durs[0]);
+						if (patternType == '@') {
+							replaceStr = "Pchain(Pbind('dur', %), Pn(%))".format(durs[0], elemStr);
+						} {
+							replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elemStr, durs[0]);
+						}
 					}
 				};
 
@@ -1022,12 +1185,6 @@ BacalaoParser {
 					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, %)".format(ccNum);
 				};
 
-				// if (patternArray.size > 1) {
-				// 	replaceStr = "Pbind('%', Pseq(%), 'dur', %)".format(patternType, patternArray, patternArray.size.reciprocal);
-				// } {
-				// 	replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, patternArray[0], patternArray.size.reciprocal);
-				// };
-				// patternString.debug("generic pattern");
 			}.value;
 			[curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
 			// [patternArray, replaceStr].postln;
@@ -1044,6 +1201,21 @@ BacalaoParser {
 		^code
 	}
 
+	*prGetRest { arg patternType;
+		^if (patternType == '@') {
+			// These are Event patterns (the variable lookup expects an Event)
+			(mask: Rest())
+		} {
+			// These are all the rest: simple value patterns
+			Rest()
+		}
+	}
+
+	*prGetRestString { arg patternType;
+		// Must have no spaces!
+		^this.prGetRest(patternType).cs.reject(_.isSpace)
+	}
+
 	*prEvalDefaultCharString { arg barString, patternType;
 		var patternArray = barString.as(Array).collect{ arg ch;
 			var asc = ch.ascii;
@@ -1056,11 +1228,12 @@ BacalaoParser {
 				'freq', [ 60.midicps, 36.midicps, (_ * 1.midiratio) ],
 				'amp', [ 26.reciprocal*0.5, 26.reciprocal, (_ + 26.reciprocal), 0, (_ + 10.reciprocal) ],
 				'pan', [ -1, -1, (_ + 12.5.reciprocal), -1, (_ + 4.5.reciprocal) ],
+				'@', { Error("Can't use default (non-variable) lookup with char string pattern").throw },
 				[ 0, 0, (_ + 1) ] // Default values
 			);
 			result = case
 			{ ch == Char.space } {
-				Rest() }
+				this.prGetRest(patternType) }
 			{ ch == $_ } { // Extend duration of previous note
 				$_ }
 			{ asc >= $a.ascii and: { asc <= $z.ascii } } {
@@ -1077,7 +1250,7 @@ BacalaoParser {
 				v }
 			{ // Default case
 				"Char pattern didn't recognize: '%' (ascii %) -- using Rest".format(ch, asc).warn;
-				Rest()
+				this.prGetRest(patternType)
 			};
 			result
 		};
@@ -1129,7 +1302,7 @@ BacalaoParser {
 				var patternDur = patternArray.collect(_.value).sum;
 				var nextBar = patternDur.roundUp(eventsPerBar);
 				if (patternDur < nextBar) {
-					patternArray = patternArray.add(Rest() -> (nextBar - patternDur));
+					patternArray = patternArray.add(this.prGetRest(patternType) -> (nextBar - patternDur));
 				};
 				(patternArray -> (nextBar / eventsPerBar))
 			} {
@@ -1168,7 +1341,8 @@ BacalaoParser {
 						a.isKindOf(Association) != b.isKindOf(Association)
 					}.collect{ arg elems;
 						if (elems.first.isKindOf(Association)) {
-							"PnsymRest(Pseq(%), ~%)".format(elems.collect{|e| e.value}.join.cs, elems.first.key);
+							var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+							"%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
 						} {
 							elems.join($,)
 						}
@@ -1181,20 +1355,33 @@ BacalaoParser {
 					//var longDursStr = String.streamContents({ arg stream;
 					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
 					var numCyclesRequired = 1.0;
-					replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
+					if (patternType == '@') {
+						replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pseq(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
+					} {
+						replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
+					}
 				} {
 					if (elems[0].isKindOf(Association)) {
-						elems[0] = "PnsymRest(Pseq(%), ~%)".format(elems.collect{|e| e.value}.join.cs, elems.first.key);
+						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+						elems[0] = "%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
 					};
 
 					if (durs[0] === 1) {
 						// In the case of a single entry at the top level (and no array braces)
 						// just return a single value repeatedly, with no duration.
-						// IF you want a single event that lasts one cycle, use
+						// If you want a single event that lasts one cycle, use
 						// "[0]" or "0@1"
-						replaceStr = "Pbind('%', %)".format(patternType, elems[0]);
+						if (patternType == '@') {
+							replaceStr = "Pn(%)".format(elems[0]);
+						} {
+							replaceStr = "Pbind('%', %)".format(patternType, elems[0]);
+						}
 					} {
-						replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elems[0], durs[0]);
+						if (patternType == '@') {
+							replaceStr = "Pchain(Pbind('dur', %), Pn(%))".format(durs[0], elems[0]);
+						} {
+							replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elems[0], durs[0]);
+						}
 					}
 				};
 			}.value;
@@ -1522,6 +1709,19 @@ Bake {
 		// } {
 		// 	Error("Document is nil");
 		// };
+		^bakedText
+	}
+
+	*cs { arg x;
+		var bakedText = x.cs;
+		var tmpFilePath = Platform.defaultTempDir +/+ "bacalaoPaste.txt";
+		var clipboardCmd = Platform.case(
+			\osx, { "pbcopy" },
+			\linux, { "xclip" },
+			\windows, { "clip" }
+		);
+		File.use(tmpFilePath, "w", { |f| f.write(bakedText) });
+		"% < %".format(clipboardCmd, tmpFilePath).unixCmd;
 		^bakedText
 	}
 }

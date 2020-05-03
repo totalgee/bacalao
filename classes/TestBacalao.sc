@@ -165,38 +165,54 @@ TestBacalao : UnitTest {
 		this.assertEquals(b.vars['bd'][2], 48, "Get/set using current Environment");
 
 		str = "note\"sd\"";
-		expected = Pbind(\note, 38);
+		expected = Pbind(\note, ~sd);
 		this.assertEquals(parse.preProcess(str), expected.cs, "scalar variable");
 		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable");
 
 		str = "note\"sd:2\"";
-		expected = Pbind(\note, 38);
+		expected = Pbind(\note, ~sd);
 		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable with index");
 
 		str = "note\"sd:r\"";
-		expected = Pbind(\note, 38);
+		expected = Pbind(\note, ~sd);
 		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable with random index");
 
 		str = "note\"bd\"";
-		expected = Pbind(\note, 36);
+		expected = Pbind(\note, ~bd[0]);
 		this.assertEquals(parse.preProcess(str), expected.cs, "array variable");
 		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "array variable");
 
 		str = "note\"bd:3\"";
-		expected = Pbind(\note, 49);
+		expected = Pbind(\note, ~bd[3]);
 		this.assertEquals(parse.preProcess(str), expected.cs, "array variable with index");
 
 		str = "note\"bd:-1\"";
-		expected = Pbind(\note, 49);
+		expected = Pbind(\note, ~bd.wrapAt(-1));
 		this.assertEquals(parse.preProcess(str), expected.cs, "array variable with negative index");
 
-		str = "Pseed(33, note\"bd:r\" )";
-		expected = Pseed(33, Pbind(\note, Prand([36, 37, 48, 49], inf)));
+		str = "Pseed(Pn(33,1), note\"bd:r\" )";
+		expected = Pseed(Pn(33,1), Pbind(\note, Prand(~bd, inf)));
 		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index");
+
+		str = "Pseed(Pn(39,1), note\"<bd:r sd>\" )";
+		expected = Pseed(39, Pbind(\note, Ppatlace([Prand(~bd, inf), ~sd], inf)));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in alternate (no dur)");
+
+		str = "Pseed(Pn(42,2), note\"<bd:r sd> ~\" )";
+		expected = Pseed(Pn(42,2), Pbind(\note, Ppatlace([ Ppatlace([ Prand(~bd, inf), ~sd], inf), Rest() ], 2), \dur, 0.5));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in alternate (w/dur)");
+
+		str = "Pseed(Pn(47,1), note\"<sd,bd:r>\" )";
+		expected = Pseed(Pn(47,1), Pbind(\note, Ptuple([ ~sd, Prand(~bd, inf) ])));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in chord (no dur)");
+
+		str = "Pseed(Pn(53,1), Pn(note\"bd:1 <bd:r,sd>\",4) )";
+		expected = Pseed(Pn(53,1), Pn(Pbind(\note, Ppatlace([ ~bd[1], Ptuple([ Prand(~bd, inf), ~sd ]) ]), \dur, Pseq([ 0.5, 0.5 ])), 4));
+		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in chord (w/dur)");
 
 		~chord = [ [1,3,5,7], [0,1,3,5], [-2,0,1,3], [-4,-2,0,1] ];
 		str = "deg\"chord:1 chord:3\"";
-		expected = Pbind('degree', Ppatlace([ [0,1,3,5], [-4,-2,0,1] ], 1), 'dur', 0.5);
+		expected = Pbind('degree', Ppatlace([ ~chord[1], ~chord[3] ], 1), 'dur', 0.5);
 		this.compareEvents(parse.preProcess(str).interpret, expected, 3, "variables in current Environment");
 
 		~custom = (
@@ -205,14 +221,14 @@ TestBacalao : UnitTest {
 			steve: [ [46, 48, 50] ]
 		);
 		str = "mn~custom\"fred bob:0 steve bob:1\"";
-		expected = Pbind('midinote', Ppatlace([ 36, 38, [46,48,50], 40]), 'dur', 0.25);
+		expected = Pbind('midinote', Ppatlace([ ~custom.fred, ~custom.bob[0], ~custom.steve[0], ~custom.bob[1]]), 'dur', 0.25);
 		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "locally-specified variable");
 
 		str = "mn~unknown\"dave ~\"";
 		this.assertException({parse.preProcess(str)}, Error, "unknown event pattern variable lookup");
 
 		str = "mn~custom\"<fred bob:0>@3 <steve:0!2 bob:1!3>\"";
-		expected = Pbind('midinote', Ppatlace([ Pseq([ 36, 38 ], inf), Pseq([ [ 46, 48, 50 ], [ 46, 48, 50 ], 40, 40, 40 ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
+		expected = Pbind('midinote', Ppatlace([ Pseq([ ~custom.fred, ~custom.bob[0] ], inf), Pseq((~custom.steve[0] ! 2) ++ (~custom.bob[1] ! 3), inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
 		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (explicit Env)");
 
 		~fr = 36;
@@ -222,13 +238,176 @@ TestBacalao : UnitTest {
 		expected = Pbind('midinote', Ppatlace([ Pseq([ ~fr, ~bo[0] ], inf), Pseq([ ~st[0], ~st[0], ~bo[1], ~bo[1], ~bo[1] ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
 		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (current Env)");
 
-		str = "mn~custom\"<fred,bob:0>*2 <bob:1,fred,60>\"";
-		expected = Pbind('midinote', Ppatlace([ [ 36, 38 ], [ 36, 38 ], [ 40, 36, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
+		str = "mn~custom\"<fred,bob:0>*2 <bob:1,fred>\"";
+		expected = Pbind('midinote', Ppatlace([ [ ~custom.fred, ~custom.bob[0] ],
+			[ ~custom.fred, ~custom.bob[0] ],
+			[ ~custom.bob[1], ~custom.fred ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
 		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (explicit Env)");
+
+		~session = (ohh: 50, chh: 48, o: 40, c: 38);
+		this.prParseAndCompareEvents("alternate, multi-letter var (no dur)", "mn~session\"<ohh chh>\"", [
+			(midinote: ~session.ohh),
+			(midinote: ~session.chh),
+			(midinote: ~session.ohh),
+			(midinote: ~session.chh),
+			(midinote: ~session.ohh),
+			(midinote: ~session.chh)
+		]);
+		this.prParseAndCompareEvents("alternate, single-letter var (no dur)", "mn~session\"<o c>\"", [
+			(midinote: ~session.o),
+			(midinote: ~session.c),
+			(midinote: ~session.o),
+			(midinote: ~session.c),
+			(midinote: ~session.o),
+			(midinote: ~session.c)
+		]);
+		this.prParseAndCompareEvents("alternate, multi-letter var (w/dur)", "mn~session\"<ohh chh> ~\"", [
+			(midinote: ~session.ohh, dur: 0.5),
+			(midinote: Rest(), dur: 0.5),
+			(midinote: ~session.chh, dur: 0.5),
+			(midinote: Rest(), dur: 0.5),
+			nil
+		]);
+		this.prParseAndCompareEvents("alternate, single-letter var (w/dur)", "mn~session\"<o c> ~\"", [
+			(midinote: ~session.o, dur: 0.5),
+			(midinote: Rest(), dur: 0.5),
+			(midinote: ~session.c, dur: 0.5),
+			(midinote: Rest(), dur: 0.5),
+			nil
+		]);
 
 		str = "mn\"<fr,bo:0>*2 <bo:1,fr,60>\"";
 		expected = Pbind('midinote', Ppatlace([ [ ~fr, ~bo[0] ], [ ~fr, ~bo[0] ], [ ~bo[1], ~fr, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
 		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (current Env)");
+	}
+
+	prParseAndCompareEvents { arg testDescription, str, expected;
+		var results = parse.preProcess(str).interpret.asStream.nextN(expected.size, ());
+		this.assertEquals(results, expected, testDescription);
+	}
+
+	test_variablesWithEvents {
+		var str;
+		var b = Bacalao();
+		~varied = (
+			a: (note: 2, amp: 0.5),
+			b: (midinote: 67, amp: 0.3, detune: 0.1, legato: 2),
+			bloud: (midinote: 67, amp: 0.8, detune: 0.1, legato: 2),
+			c: (freq: 300, lag: 0.1, dur: 0.75),
+			d: (degree: [2,4,6], scale: Scale.minor.degrees, strum: 0.0625)
+		);
+		this.prParseAndCompareEvents("string pattern", "@~varied\"a bloud [~ c] d\"", [
+			~varied.a.copy.dur = 0.25,
+			~varied.bloud.copy.dur = 0.25,
+			(mask: Rest()).copy.dur = 0.125,
+			~varied.c.copy.dur = 0.125,
+			~varied.d.copy.dur = 0.25,
+			nil
+		]);
+
+		this.prParseAndCompareEvents("char pattern", "@~varied'8@ab_cd/a_ b_/d'", [
+			~varied.a.copy.dur = 0.125,
+			~varied.b.copy.dur = 0.25,
+			~varied.c.copy.dur = 0.125,
+			~varied.d.copy.dur = 0.125,
+			(mask: Rest(), dur: 0.375),
+			~varied.a.copy.dur = 0.25,
+			(mask: Rest(), dur: 0.125),
+			~varied.b.copy.dur = 0.25,
+			(mask: Rest(), dur: 0.375),
+			~varied.d.copy.dur = 0.125,
+			(mask: Rest(), dur: 0.875),
+			nil
+		]);
+
+		this.prParseAndCompareEvents("string pattern (single event)", "@~varied\"b\"", [
+			~varied.b,
+			~varied.b,
+			~varied.b,
+			// forever
+		]);
+
+		this.prParseAndCompareEvents("string pattern (single event w/dur)", "@~varied\"b@1\"", [
+			~varied.b.copy.dur = 1.0,
+			~varied.b.copy.dur = 1.0,
+			~varied.b.copy.dur = 1.0,
+			// forever
+		]);
+
+		this.prParseAndCompareEvents("char pattern (single event)", "@~varied'd'", [
+			~varied.d.copy.dur = 1.0,
+			~varied.d.copy.dur = 1.0,
+			~varied.d.copy.dur = 1.0,
+			// forever
+		]);
+
+		this.prParseAndCompareEvents("string pattern (single Rest)", "@~varied\"~\"", [
+			(mask: Rest()),
+			(mask: Rest()),
+			(mask: Rest()),
+			// forever
+		]);
+
+		this.prParseAndCompareEvents("char pattern (single Rest)", "@~varied' '", [
+			(mask: Rest()).copy.dur = 1.0,
+			(mask: Rest()).copy.dur = 1.0,
+			(mask: Rest()).copy.dur = 1.0,
+			// forever
+		]);
+
+		this.prParseAndCompareEvents("string pattern (one note and Rest)", "@~varied\"a ~\"", [
+			~varied.a.copy.dur = 0.5,
+			(mask: Rest(), dur: 0.5),
+			nil
+		]);
+
+		this.prParseAndCompareEvents("char pattern (one note and Rest)", "@~varied'a '", [
+			~varied.a.copy.dur = 0.5,
+			(mask: Rest(), dur: 0.5),
+			nil
+		]);
+
+		this.prParseAndCompareEvents("string pattern with alternation",
+			"@~varied\"<a bloud> <c ~ d>\"", [
+				~varied.a.copy.dur = 0.5,
+				~varied.c.copy.dur = 0.5,
+				~varied.bloud.copy.dur = 0.5,
+				(mask: Rest(), dur: 0.5),
+				~varied.a.copy.dur = 0.5,
+				~varied.d.copy.dur = 0.5,
+				~varied.bloud.copy.dur = 0.5,
+				~varied.c.copy.dur = 0.5,
+				~varied.a.copy.dur = 0.5,
+				(mask: Rest(), dur: 0.5),
+				~varied.bloud.copy.dur = 0.5,
+				~varied.d.copy.dur = 0.5,
+				nil
+		]);
+
+		{
+			// Event patterns with parallelism/chords: currently not supported
+			var testFunc = {
+				this.prParseAndCompareEvents("string pattern with chords",
+					"@~varied\"<a,bloud> <c,d,b>\"", [
+						[ ~varied.a.copy.dur = 0.5, ~varied.bloud.copy.dur = 0.5 ],
+						[ ~varied.c.copy.dur = 0.5, ~varied.d.copy.dur = 0.5, ~varied.b.copy.dur = 0.5 ],
+						nil
+				]);
+			};
+			this.assertException(testFunc, Error, "string pattern with chords");
+		}.value;
+
+		str = "@~unknown\"a b c\"";
+		this.assertException({parse.preProcess(str)}, Error, "unknown string pattern variable lookup");
+
+		str = "@~unknown'8@aab_cc__/cd/dad_b_'";
+		this.assertException({parse.preProcess(str)}, Error, "unknown char pattern variable lookup");
+
+		str = "@\"a c b d\"";
+		this.assertException({parse.preProcess(str)}, Error, "string pattern without variable");
+
+		str = "@'abe'";
+		this.assertException({parse.preProcess(str)}, Error, "char pattern without variable");
 	}
 
 	test_library {
@@ -486,5 +665,76 @@ TestBacalao : UnitTest {
 		this.compareEvents(preProcessed.interpret, expected, 9, "Bjorklund masking 2");
 	}
 
+	prPlayAndGetEvents { arg bacalao, pattern, numDesiredEvents = 4, desiredKeys = #[\degree, \dur, \beat], maxTime = 2.0;
+		var events = [];
+		var finishFunc = Pfunc{ |ev|
+			// We set e.parent_(nil) so we lose the extra stuff fromm Event.default and
+			// only get a simple Event with the keys we want. (Alternatively could do ().putAll(e))
+			events = events.add(ev.select{ |val,key| desiredKeys.includes(key) }.parent_(nil));
+			if (events.size < numDesiredEvents) {
+				true
+			} {
+				// When we've got enough events, return nil so the pattern stops,
+				// because otherwise we'll get overwhelmed (we've set the clock
+				// to run very fast)
+				nil
+			}
+		};
+		Ndef.clear;
+		Pdef.clear;
+		bacalao.p(\test, Pbind(\beat, Ptime(), \finish, finishFunc) <> pattern);
+		this.wait({ events.size >= numDesiredEvents }, "waiting for all Events", maxTime);
+
+		// Not sure why the Pfunc adds extra events after the end, so
+		// just truncate the list to the desired size...
+		^events.keep(numDesiredEvents)
+	}
+
+	prPat { arg str;
+		^parse.preProcess(str).interpret;
+	}
+
+	test_playing {
+		var t = TempoClock(500, 0, 0); // make a very fast clock, so we don't wait around
+		var b = Bacalao(t);
+		this.bootServer;
+		{
+			var expected = [
+				(degree: 0, dur: 0.25, beat: 0.0),
+				(degree: 1, dur: 0.25, beat: 1.0),
+				(degree: 2, dur: 0.25, beat: 2.0),
+				(degree: 3, dur: 0.25, beat: 3.0),
+				(degree: 5, dur: 0.25, beat: 4.0),
+				(degree: 1, dur: 0.25, beat: 5.0),
+				(degree: 2, dur: 0.25, beat: 6.0),
+				(degree: 3, dur: 0.25, beat: 7.0),
+				(degree: 0, dur: 0.25, beat: 0.0),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				this.prPat("deg\"<0 5> 1 2 3\""),
+				expected.size);
+			this.assertEquals(events, expected, "simple alternation");
+		}.value;
+
+		{
+			var expected = [
+				(degree: 0, dur: 0.25, beat: 0.0, amp: 0.9),
+				(degree: 1, dur: 0.25, beat: 1.0, amp: 0.7),
+				(degree: [2, 9], dur: 0.25, beat: 2.0, amp: 0.5),
+				(degree: 3, dur: 0.125, beat: 3.0, amp: 0.3),
+				(degree: 4, dur: 0.125, beat: 3.5, amp: 0.2),
+				(degree: 5, dur: 0.25, beat: 4.0, amp: 0.9),
+				(degree: 1, dur: 0.25, beat: 5.0, amp: 0.7),
+				(degree: [2, 9], dur: 0.25, beat: 6.0, amp: 0.5),
+				(degree: 3, dur: 0.125, beat: 7.0, amp: 0.3),
+				(degree: 4, dur: 0.125, beat: 7.5, amp: 0.2),
+				(degree: 0, dur: 0.25, beat: 0.0, amp: 0.9),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				this.prPat("deg\"<0 5> 1 <2,9> [3 4]\"") << this.prPat("amp'98765432'"),
+				expected.size, #[\degree, \dur, \beat, \amp]);
+			this.assertEquals(events, expected, "time chaining");
+		}.value;
+	}
 
 }

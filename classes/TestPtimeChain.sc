@@ -176,6 +176,34 @@ TestPtimeChain : UnitTest {
 		this.compareEvents(results, desired, 10, "equivalent Pbind");
 	}
 
+	test_eventChain {
+		var a = Pbind(\degree, Pseq((0..3)), \dur, Pseq([0.5, 0.25], inf));
+		var b = Pbind(\db, Pseq((0,3..9), inf));
+		var e = (pan: -0.5);
+		var results = a << b << e;
+		var expected = [
+			(degree: 0, dur: 0.5, db: 0, pan: -0.5),
+			(degree: 1, dur: 0.25, db: 3, pan: -0.5),
+			(degree: 2, dur: 0.5, db: 6, pan: -0.5),
+			(degree: 3, dur: 0.25, db: 9, pan: -0.5),
+			nil
+		];
+		this.assertEquals(results.asStream.nextN(expected.size, ()), expected, "Event at end");
+
+		e = (pan: 0.25, dur: 0.25);
+		~results = e << a << b;
+		~expected = [
+			(degree: 0, dur: 0.25, db: 0, pan: 0.25),
+			(degree: 0, dur: 0.25, db: 3, pan: 0.25),
+			(degree: 1, dur: 0.25, db: 6, pan: 0.25),
+			(degree: 2, dur: 0.25, db: 9, pan: 0.25),
+			(degree: 2, dur: 0.25, db: 0, pan: 0.25),
+			(degree: 3, dur: 0.25, db: 3, pan: 0.25),
+			nil
+		];
+		this.assertEquals(results.asStream.nextN(expected.size, ()), expected, "Event at start");
+	}
+
 	test_badChainType {
 		var a = Pbind(\degree, Pseq((0..3)), \dur, 0.5);
 		var b = Pbind(\db, Pseq((0,3..9), inf));

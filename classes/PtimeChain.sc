@@ -1,11 +1,11 @@
 PtimeChain : Pattern {
 	var <>patterns;
-	const timeEpsilon = 0.0001;
+	const timeEpsilon = 1e-6;
 
 	*new { arg ... patterns;
 		patterns.do{ arg p;
-			if (p.isKindOf(Pattern).not) {
-				Error("PtimeChain requires Event Patterns").throw
+			if (p.isKindOf(Pattern).not and: { p.isKindOf(Event).not }) {
+				Error("PtimeChain requires Event Patterns or Events").throw
 			}
 		};
 		^super.newCopyArgs(patterns);
@@ -13,8 +13,8 @@ PtimeChain : Pattern {
 
 	<< { arg aPattern;
 		var list;
-		if (aPattern.isKindOf(Pattern).not) {
-			Error("PtimeChain requires Event Patterns").throw
+		if (aPattern.isKindOf(Pattern).not and: { aPattern.isKindOf(Event).not }) {
+			Error("PtimeChain requires Event Patterns or Events").throw
 		};
 		list = patterns.copy.add(aPattern);
 		^this.class.new(*list)
@@ -108,6 +108,15 @@ PtimeChain : Pattern {
 }
 
 +Pattern {
+
+	<< { arg aPattern;
+		// time-based pattern key merging
+		^PtimeChain(this, aPattern)
+	}
+
+}
+
++Event {
 
 	<< { arg aPattern;
 		// time-based pattern key merging

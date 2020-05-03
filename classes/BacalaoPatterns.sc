@@ -139,22 +139,77 @@ PnSafe : FilterPattern {
 // Version of Pnsym that returns Rest() by default (rather than 1)
 // It always returns Rest for spaces, but for other failed lookups
 // it also posts a warning.
+// It also handles indexing, using 'name:2' notation, and random
+// choice using 'name:r' notation.
+// (See also Bacalao.lookupVariable)
 PnsymRest : Psym {
+
+	*prLookupVariable { arg dict, key;
+		var elem = key.asString;
+		^dict !? {
+			var variable, index, substitute;
+			// Allow (e.g.) "bd:5"-style indexing, or simply "bd" (equivalent to "bd:0")
+			// Also allow "bd:r", which will choose a random value from the collection.
+			#variable, index = elem.split($:);
+			substitute = dict.at(variable.asSymbol);
+			substitute !? {
+				if (index.notNil and: { substitute.isSequenceableCollection }) {
+					if (index == "r" and: { substitute.size > 1 }) {
+						substitute.asArray.choose
+					} {
+						substitute.asArray.wrapAt(index.asInteger)
+					}
+				} {
+					substitute.first
+				}
+			}
+		}
+	}
 
 	lookupClass { ^Pdefn }
 
 	lookUp { arg key;
 		key = key.asSymbol;
-		if (key == ' ') {
+		if (key == ' ' or: { key == '~' }) {
 			// Return Rest without complaining
-			^Rest()
+			^this.rest
 		} {
 			var lookupDict = dict ?? { this.lookupClass.all };
-			^(lookupDict.at(key) ?? {
+			^(PnsymRest.prLookupVariable(lookupDict, key) ?? {
 				("PnsymRest: '" ++ key ++ "' not found, using Rest").warn;
-				Rest()
+				this.rest
 			})
 		}
+	}
+
+	// Unlike the library versions Psym, Pnsym, etc.,
+	// this version doesn't parallelise, but instead
+	// returns arrays of values/Events when it gets
+	// a collection for lookup.
+	getPattern { arg key;
+		^if(key.isSequenceableCollection) {
+			key.collect {|each|
+				this.lookUp(each)
+			}
+		} {
+			this.lookUp(key)
+		}
+	}
+
+	rest {
+		^Rest()
+	}
+}
+
+// Version of PnsymRest that returns an Event with Rest() in one of its
+// keys by default (rather than Rest()).
+PnsymRestEvent : PnsymRest {
+
+	// This is for Event streams, so it's like Psym (vs Pnsym), so uses Pdef as base lookup
+	lookupClass { ^Pdef }
+
+	rest {
+		^(mask: Rest())
 	}
 }
 
