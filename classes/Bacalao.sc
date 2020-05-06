@@ -131,6 +131,26 @@ Bacalao {
 			var sig = playFunc.(2, /* withGate */ true);
 			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
 		}).add;
+
+		Safety.addSynthDefFunc(\safeLimitNotify, { |numChans, limit=1|
+			{
+				var limitCtl = \limit.kr(limit).abs;
+				var mainOuts = In.ar(0, numChans);
+				var safeOuts = ReplaceBadValues.ar(mainOuts);
+
+				var resetTrig = Impulse.ar(0.5);
+				var peak = Peak.ar(safeOuts * (1 - resetTrig), resetTrig);
+				var maxPeak = peak.reduce(\max); //.poll(1, "max");
+				var delayMaxPeak = Delay1.ar(maxPeak);
+				var overTrig = delayMaxPeak > limitCtl;
+				var limited = Limiter.ar(safeOuts, limitCtl); // safeOuts.clip2(limitCtl);
+				(delayMaxPeak / limitCtl).ampdb.poll((delayMaxPeak > maxPeak) * overTrig, "Audio peak exceeded limit by dB");
+				ReplaceOut.ar(0, limited);
+			}
+		});
+		// Apply a limiter to prevent clipping if we go above amplitude 1
+		Safety.defaultDefName = \safeLimitNotify;
+		Safety.all.do(_.defName = \safeLimitNotify);
 	}
 
 	// This sets up automatic substitutions (like variables) that may be used
@@ -344,11 +364,28 @@ Bacalao {
 		this.p(defName, pattern, dur, quant, \xset);
 	}
 
-	// Set the playback volume of the playing NodeProxy.
+	// Set the playback volume of the playing NodeProxy, with optional fadeTime.
 	// e.g. b.db('drum', -12);
-	db { arg defName, db = 0;
+	db { arg defName, db = 0, fadeTime = 2;
 		var np = this.proxy(defName);
-		np.vol = db.dbamp;
+		if (fadeTime > 0 and: { db.dbamp.equalWithPrecision(np.vol, 0.01).not } ) {
+			var startDb = np.vol.ampdb.max(-120);
+			var targetDb = db.max(-120);
+			var startTime = SystemClock.beats;
+			SystemClock.sched(0.01, { arg time;
+				var delta = time - startTime;
+				if (delta > fadeTime) {
+					np.vol = db.dbamp;
+					nil
+				} {
+					np.vol = delta.linlin(0, fadeTime, startDb, targetDb).dbamp;
+					// ("Fading with " ++ np.vol).postln;
+					0.15
+				}
+			})
+		} {
+			np.vol = db.dbamp;
+		}
 	}
 
 	sched { arg event, quant = 1;
@@ -368,7 +405,9 @@ Bacalao {
 		if (index.isInteger and: {index > 0}) {
 			var np = this.proxy(defName);
 			np[index] = filterFunc !? {\filter -> filterFunc};
-			np.set((\wet.asString ++ index).asSymbol, wet);
+			this.sched({
+				np.set((\wet.asString ++ index).asSymbol, wet);
+			}, 1);
 		} {
 			"fx index should be an integer greater than 0...skipping".warn;
 		}
@@ -528,6 +567,7 @@ Bacalao {
 				this.despatialize(defName, playDefault: false);
 				vstProxy.clear();
 				vstCtl.close;
+				nil
 			});
 		}
 	}
