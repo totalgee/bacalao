@@ -49,6 +49,12 @@ PtimeChain : Pattern {
 					nextValueTime <= (structureTime + timeEpsilon);
 				} {
 					var delta;
+					// Suggested "parent" fix from Scott Carver, to handle case of
+					// "downstream" events reading from "upstream" events.
+					// See https://scsynth.org/t/time-aware-merging-of-two-event-pattern-streams/1482/15
+					if (inevent !== cumulativeEvent) {
+						inevent.parent_(cumulativeEvent);
+					};
 					nextValueEvent = valueStream.next(inevent);
 					// nextValueEvent.debug("nextValueEvent");
 					// Q: Should we exit for value streams that end, or just the structure stream?

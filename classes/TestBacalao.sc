@@ -37,107 +37,89 @@ TestBacalao : UnitTest {
 		var b = Bacalao();
 		var str = "deg\" 1 2    3 4\"";
 		var expected = Pbind(\degree, Pseq([1, 2, 3, 4]), \dur, Pseq(0.25!4));
-		var preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 5, "deg");
+		this.compareEvents(this.prPat(str), expected, 5, "deg");
 
 		b.start;
-		this.compareEvents(preProcessed.interpret, expected, 5, "deg through Interpreter");
+		this.compareEvents(this.prPat(str), expected, 5, "deg through Interpreter");
 		b.stop;
 
 		str = "deg\"0\"";
 		expected = Pbind(\degree, 0);
-		preProcessed = parse.preProcess(str);
-		this.assertEquals(preProcessed, expected.cs, "deg (single)");
+		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single)");
 
 		str = "deg\"[0]\"";
 		expected = Pbind(\degree, 0, \dur, 1.0);
-		preProcessed = parse.preProcess(str);
-		this.assertEquals(preProcessed, expected.cs, "deg (single array entry)");
+		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single array entry)");
 
 		str = "deg\"0@1\"";
 		expected = Pbind(\degree, 0, \dur, 1.0);
-		preProcessed = parse.preProcess(str);
-		this.assertEquals(preProcessed, expected.cs, "deg (single with duration)");
+		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single with duration)");
 
 		str = "freq\"Pgeom(100,1.5,4)\"";
 		expected = Pbind(\freq, Pgeom(100, 1.5, 4));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 5, "freq Pgeom");
+		this.compareEvents(this.prPat(str), expected, 5, "freq Pgeom");
 
 		str = "deg\"1 ~ 3 ~\"";
 		expected = Pbind(\degree, Pseq([1, Rest(), 3, Rest()]), \dur, 1/4);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 5, "rests");
+		this.compareEvents(this.prPat(str), expected, 5, "rests");
 
 		this.assertEquals(parse.parseArray("a 1@4 default@2 2"),
 			[ ("a" -> 1), ("1" -> 4.0), ("default" -> 2.0), ("2" -> 1) ], "parseArray symbols");
 
 		str = "ins\"\\a \\b \\default \\c\"";
 		expected = Pbind(\instrument, Pseq([\a, \b, \default, \c]), \dur, 1/4);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 5, "symbols");
+		this.compareEvents(this.prPat(str), expected, 5, "symbols");
 
 		str = "deg\"[0 [1 2] [3 [4 5]] [[6 7 8] 7]]\"";
 		expected = Pbind(\degree, Pseq([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 7 ]),
 			\dur, Pseq([ 1/4, 1/8, 1/8, 1/8, 1/16, 1/16, 0.041666666666667, 0.041666666666667, 0.041666666666667, 1/8 ]));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 11, "nested phrases");
+		this.compareEvents(this.prPat(str), expected, 11, "nested phrases");
 
 		str = "deg\"0 1 <2 3> 4\"";
 		expected = Pbind(\degree, Ppatlace([ 0, 1, Pseq([2, 3], inf), 4 ], 2),
 			\dur, 1/4);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 9, "alternating elements");
+		this.compareEvents(this.prPat(str), expected, 9, "alternating elements");
 
 		str = "deg\"1 2 <3 4> 5 <6 7 8>\"";
 		expected = Pbind(\degree, Ppatlace([ 1, 2, Pseq([3, 4], inf), 5, Pseq([6, 7, 8], inf) ], 6),
 			\dur, 1/5);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 31, "alternating elements longer");
+		this.compareEvents(this.prPat(str), expected, 31, "alternating elements longer");
 
 		str = "deg\"1@3!2 [2 3]*2!2\"";
 		expected = Pbind(\degree, Pseq(1!2 ++ ([2, 3]!2!2).flat),
 			\dur, Pseq(0.375!2 ++ (0.03125!8)));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 31, "duplicated elements and arrays");
+		this.compareEvents(this.prPat(str), expected, 31, "duplicated elements and arrays");
 
 		str = "deg\"1*(3,8,-1) [2 3]!(3,4,1)\"";
 		expected = Pbind(\degree, Pseq(1!3 ++ ([2, 3]!3).flat),
 			\dur, Pseq([0.05] ++ (0.075!2) ++ (0.1!2) ++ (0.2!2) ++ (0.1!2)));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 10, "elements and arrays with Bjorklund sequences 1");
+		this.compareEvents(this.prPat(str), expected, 10, "elements and arrays with Bjorklund sequences 1");
 
 		str = "deg\"[1 [2 3]!(5,7)]\"";
 		expected = Pbind(\degree, Pseq([1] ++ ([2, 3]!5).flat),
 			\dur, Pseq([0.125] ++ (((0.125!2) ++ (0.0625!2))!2 ++ (0.0625!2)).flat));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 12, "elements and arrays with Bjorklund sequences 2");
+		this.compareEvents(this.prPat(str), expected, 12, "elements and arrays with Bjorklund sequences 2");
 
 		str = "deg\"[1 [2 3]]*(2,5)@0.5!(3,4) 5\"";
 		expected = Pbind(\degree, Pseq(([1,2,3]!6).flat ++ 5),
 			\dur, Pseq([1, 1.5, 1, 1.5, 2, 3] *.x [2,1,1]/60  ++ (1/3)));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 20, "elements and arrays with Bjorklund sequences 3");
+		this.compareEvents(this.prPat(str), expected, 20, "elements and arrays with Bjorklund sequences 3");
 
 		str = "deg\"1 2 3 4 5 6 7 8\" << amp\"Pn(Pseries(0.1,0.1,3))\"";
 		expected = Pbind(\degree, Pseq((1..8)), \amp, Pn(Pseries(0.1,0.1,3)), \dur, 0.125);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 9, "value Patterns in keys 1");
+		this.compareEvents(this.prPat(str), expected, 9, "value Patterns in keys 1");
 
 		str = "deg\"[1 2 3 4]@2\" << amp\"Pn(Pseries(0.1,0.4,3))\" << bob\"Pgeom(1,10,inf)@1\"";
 		expected = Pbind(\degree, Pseq((1..4)), \amp, Pn(Pseries(0.1,0.4,3)), \bob, Pstutter(2, Pgeom(1,10,inf)), \dur, 0.5);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 5, "value Patterns in keys 2");
+		this.compareEvents(this.prPat(str), expected, 5, "value Patterns in keys 2");
 
 		str = "deg\"<0 <1,2>> <3 <4,5> 6>\"";
 		expected = Pbind('degree', Ppatlace([ Pseq([ 0, [ 1, 2 ] ], inf), Pseq([ 3, [ 4, 5 ], 6 ], inf) ], 6), 'dur', 0.5);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 13, "chord elements");
+		this.compareEvents(this.prPat(str), expected, 13, "chord elements");
 
 		str = "deg\"<0 1!2> <3!3 4 5>\"";
 		expected = Pbind('degree', Ppatlace([ Pseq([ 0, 1, 1 ], inf), Pseq([ 3, 3, 3, 4, 5 ], inf) ], 15), 'dur', 0.5);
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 31, "alternate values with duplicates");
+		this.compareEvents(this.prPat(str), expected, 31, "alternate values with duplicates");
 
 		str = "deg\"<0 1*2> 2\"";
 		this.assertException({ parse.preProcess(str) }, Error, "repeat not supported in alternate values");
@@ -149,16 +131,15 @@ TestBacalao : UnitTest {
 		expected = Pbind('degree', Pseq([ 1, 0, 2, 0, 11, 0, 14, Rest(1) ], 1.0),
 			'dur', 0.125,
 			'amp', Pseq([0.9, 0.4, 0, 0.4, 0.1, 0.3, 0.7, 0.7], 1));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 9, "char patterns");
+		this.compareEvents(this.prPat(str), expected, 9, "char patterns");
 	}
 
 	test_parserVariables {
 		var str, expected;
 		var b = Bacalao();
-		b.setParserVariable("bd", [36, 37, 48, 49]);
-		Bacalao.setParserVariable("sd", -38);
-		b.setParserVariable("sd", 38);
+		b.varSet("bd", [36, 37, 48, 49]);
+		Bacalao.varSet("sd", -38);
+		b.varSet("sd", 38);
 		b.vars[\bd] = -1 * [36, 37, 48, 49];
 		this.assertEquals(b.vars['bd'][1], -37, "Get/set using b.vars");
 		~bd = -1 * ~bd;
@@ -167,20 +148,20 @@ TestBacalao : UnitTest {
 		str = "note\"sd\"";
 		expected = Pbind(\note, ~sd);
 		this.assertEquals(parse.preProcess(str), expected.cs, "scalar variable");
-		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable");
+		this.compareEvents(this.prPat(str), expected, 5, "scalar variable");
 
 		str = "note\"sd:2\"";
 		expected = Pbind(\note, ~sd);
-		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable with index");
+		this.compareEvents(this.prPat(str), expected, 5, "scalar variable with index");
 
 		str = "note\"sd:r\"";
 		expected = Pbind(\note, ~sd);
-		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "scalar variable with random index");
+		this.compareEvents(this.prPat(str), expected, 5, "scalar variable with random index");
 
 		str = "note\"bd\"";
 		expected = Pbind(\note, ~bd[0]);
 		this.assertEquals(parse.preProcess(str), expected.cs, "array variable");
-		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "array variable");
+		this.compareEvents(this.prPat(str), expected, 5, "array variable");
 
 		str = "note\"bd:3\"";
 		expected = Pbind(\note, ~bd[3]);
@@ -192,28 +173,28 @@ TestBacalao : UnitTest {
 
 		str = "Pseed(Pn(33,1), note\"bd:r\" )";
 		expected = Pseed(Pn(33,1), Pbind(\note, Prand(~bd, inf)));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index");
+		this.compareEvents(this.prPat(str), expected, 10, "array variable with random index");
 
 		str = "Pseed(Pn(39,1), note\"<bd:r sd>\" )";
 		expected = Pseed(39, Pbind(\note, Ppatlace([Prand(~bd, inf), ~sd], inf)));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in alternate (no dur)");
+		this.compareEvents(this.prPat(str), expected, 10, "array variable with random index in alternate (no dur)");
 
 		str = "Pseed(Pn(42,2), note\"<bd:r sd> ~\" )";
 		expected = Pseed(Pn(42,2), Pbind(\note, Ppatlace([ Ppatlace([ Prand(~bd, inf), ~sd], inf), Rest() ], 2), \dur, 0.5));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in alternate (w/dur)");
+		this.compareEvents(this.prPat(str), expected, 10, "array variable with random index in alternate (w/dur)");
 
 		str = "Pseed(Pn(47,1), note\"<sd,bd:r>\" )";
 		expected = Pseed(Pn(47,1), Pbind(\note, Ptuple([ ~sd, Prand(~bd, inf) ])));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in chord (no dur)");
+		this.compareEvents(this.prPat(str), expected, 10, "array variable with random index in chord (no dur)");
 
 		str = "Pseed(Pn(53,1), Pn(note\"bd:1 <bd:r,sd>\",4) )";
 		expected = Pseed(Pn(53,1), Pn(Pbind(\note, Ppatlace([ ~bd[1], Ptuple([ Prand(~bd, inf), ~sd ]) ]), \dur, Pseq([ 0.5, 0.5 ])), 4));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 10, "array variable with random index in chord (w/dur)");
+		this.compareEvents(this.prPat(str), expected, 10, "array variable with random index in chord (w/dur)");
 
 		~chord = [ [1,3,5,7], [0,1,3,5], [-2,0,1,3], [-4,-2,0,1] ];
 		str = "deg\"chord:1 chord:3\"";
 		expected = Pbind('degree', Ppatlace([ ~chord[1], ~chord[3] ], 1), 'dur', 0.5);
-		this.compareEvents(parse.preProcess(str).interpret, expected, 3, "variables in current Environment");
+		this.compareEvents(this.prPat(str), expected, 3, "variables in current Environment");
 
 		~custom = (
 			fred: 36,
@@ -222,27 +203,27 @@ TestBacalao : UnitTest {
 		);
 		str = "mn~custom\"fred bob:0 steve bob:1\"";
 		expected = Pbind('midinote', Ppatlace([ ~custom.fred, ~custom.bob[0], ~custom.steve[0], ~custom.bob[1]]), 'dur', 0.25);
-		this.compareEvents(parse.preProcess(str).interpret, expected, 5, "locally-specified variable");
+		this.compareEvents(this.prPat(str), expected, 5, "locally-specified variable");
 
 		str = "mn~unknown\"dave ~\"";
 		this.assertException({parse.preProcess(str)}, Error, "unknown event pattern variable lookup");
 
 		str = "mn~custom\"<fred bob:0>@3 <steve:0!2 bob:1!3>\"";
 		expected = Pbind('midinote', Ppatlace([ Pseq([ ~custom.fred, ~custom.bob[0] ], inf), Pseq((~custom.steve[0] ! 2) ++ (~custom.bob[1] ! 3), inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (explicit Env)");
+		this.compareEvents(this.prPat(str), expected, 21, "alternate values with duplicates (explicit Env)");
 
 		~fr = 36;
 		~bo = [38, 40];
 		~st = [ [46, 48, 50] ];
 		str = "mn\"<fr bo:0>@3 <st:0!2 bo:1!3>\"";
 		expected = Pbind('midinote', Ppatlace([ Pseq([ ~fr, ~bo[0] ], inf), Pseq([ ~st[0], ~st[0], ~bo[1], ~bo[1], ~bo[1] ], inf) ], 10), 'dur', Pseq([ 0.75, 0.25 ], 10));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "alternate values with duplicates (current Env)");
+		this.compareEvents(this.prPat(str), expected, 21, "alternate values with duplicates (current Env)");
 
 		str = "mn~custom\"<fred,bob:0>*2 <bob:1,fred>\"";
 		expected = Pbind('midinote', Ppatlace([ [ ~custom.fred, ~custom.bob[0] ],
 			[ ~custom.fred, ~custom.bob[0] ],
 			[ ~custom.bob[1], ~custom.fred ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (explicit Env)");
+		this.compareEvents(this.prPat(str), expected, 21, "chords with repeats (explicit Env)");
 
 		~session = (ohh: 50, chh: 48, o: 40, c: 38);
 		this.prParseAndCompareEvents("alternate, multi-letter var (no dur)", "mn~session\"<ohh chh>\"", [
@@ -278,11 +259,11 @@ TestBacalao : UnitTest {
 
 		str = "mn\"<fr,bo:0>*2 <bo:1,fr,60>\"";
 		expected = Pbind('midinote', Ppatlace([ [ ~fr, ~bo[0] ], [ ~fr, ~bo[0] ], [ ~bo[1], ~fr, 60 ] ]), 'dur', Pseq([ 0.25, 0.25, 0.5 ]));
-		this.compareEvents(parse.preProcess(str).interpret, expected, 21, "chords with repeats (current Env)");
+		this.compareEvents(this.prPat(str), expected, 21, "chords with repeats (current Env)");
 	}
 
 	prParseAndCompareEvents { arg testDescription, str, expected;
-		var results = parse.preProcess(str).interpret.asStream.nextN(expected.size, ());
+		var results = this.prPat(str).asStream.nextN(expected.size, ());
 		this.assertEquals(results, expected, testDescription);
 	}
 
@@ -615,7 +596,7 @@ TestBacalao : UnitTest {
 		{
 			var str = "mn~inst'o x o hh'";
 			var expected = Pbind('midinote', Pseq([ 36, Rest(), 38, Rest(), 36, Rest(), 42, 42 ], 1), 'dur', 0.125);
-			this.compareEvents(parse.preProcess(str).interpret, expected, 9, "char variable lookup");
+			this.compareEvents(this.prPat(str), expected, 9, "char variable lookup");
 
 			str = "mn~unknown'o x o hh'";
 			this.assertException({parse.preProcess(str)}, Error, "unknown char variable lookup");
@@ -623,26 +604,26 @@ TestBacalao : UnitTest {
 			~inst = (\o: \fred, \x: 38);
 			str = "mn~inst'o_%x _dx'";
 			expected = Pbind('midinote', Pseq([ \fred, Rest(), 38, Rest(), Rest(), 38 ], 1), 'dur', Pseq([0.25, 0.125, 0.125, 0.25, 0.125, 0.125]));
-			this.compareEvents(parse.preProcess(str).interpret, expected, 7, "missing char variable lookups");
+			this.compareEvents(this.prPat(str), expected, 7, "missing char variable lookups");
 
 			~samp = (\a: Buffer(), \b: Buffer(), \c: Buffer());
 			str = "buf~samp'ab c'";
 			expected = Pbind('buf', Pseq([ ~samp.a, ~samp.b, Rest(), ~samp.c ], 1), 'dur', 0.25);
-			this.compareEvents(parse.preProcess(str).interpret, expected, 5, "Buffer char variable lookup");
+			this.compareEvents(this.prPat(str), expected, 5, "Buffer char variable lookup");
 
 			thisThread.randSeed = 234;
 			~weird = (\a: 0, \b: 7, \c: Pwhite(-7,7,1));
 			str = "note~weird'ab cacbc'";
 			expected = Pbind('note', Pseq([ 0, 7, Rest(), 5, 0, -3, 7, 3 ], 1), 'dur', 0.125);
-			this.compareEvents(parse.preProcess(str).interpret, expected, 9, "function in char variable lookup");
+			this.compareEvents(this.prPat(str), expected, 9, "function in char variable lookup");
 
 			str = "deg'c' << amp'4'";
 			expected = Pbind('degree', 2, 'dur', 1, 'amp', 0.4);
-			this.compareEvents(parse.preProcess(str).interpret, expected, 2, "single char patterns");
+			this.compareEvents(this.prPat(str), expected, 2, "single char patterns");
 
 			str = "deg~weird'b' << amp~weird'a'";
 			expected = Pbind('degree', Pn(7, 1), 'dur', 1, 'amp', Pn(0, 1));
-			this.compareEvents(parse.preProcess(str).interpret, expected, 2, "single char patterns w/variable lookup");
+			this.compareEvents(this.prPat(str), expected, 2, "single char patterns w/variable lookup");
 		}.value;
 	}
 
@@ -655,14 +636,12 @@ TestBacalao : UnitTest {
 		var str = "deg\"0 1 2 3 4 5 6 7\" << PmaskBjork(3,8)";
 		var expected = Pbind(\degree, Pseq((0..7)),
 			\dur, 0.125, \mask, Pseq([1, Rest(0), Rest(0), 1, Rest(0), Rest(0), 1, Rest(0)]));
-		var preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 9, "Bjorklund masking 1");
+		this.compareEvents(this.prPat(str), expected, 9, "Bjorklund masking 1");
 
 		str = "deg\"0 1 2 3 4 5 6 7\" << amp\"1 0.25@7\" << inst\"\\ping\" << PmaskBjork(3,8)";
 		expected = Pbind(\degree, Pseq((0..7)), \amp, Pseq([1] ++ (0.25!7)), \instrument, \ping,
 			\dur, 0.125, \mask, Pseq([1, Rest(0), Rest(0), 1, Rest(0), Rest(0), 1, Rest(0)]));
-		preProcessed = parse.preProcess(str);
-		this.compareEvents(preProcessed.interpret, expected, 9, "Bjorklund masking 2");
+		this.compareEvents(this.prPat(str), expected, 9, "Bjorklund masking 2");
 	}
 
 	prPlayAndGetEvents { arg bacalao, pattern, numDesiredEvents = 4, desiredKeys = #[\degree, \dur, \beat], maxTime = 2.0;
@@ -695,9 +674,10 @@ TestBacalao : UnitTest {
 	}
 
 	test_playing {
-		var t = TempoClock(500, 0, 0); // make a very fast clock, so we don't wait around
+		var t = TempoClock(50, 0, 0); // make a very fast clock, so we don't wait around
 		var b = Bacalao(t);
 		this.bootServer;
+		1.wait; // wait for ServerTree to be built (Safety quark installed)
 		{
 			var expected = [
 				(degree: 0, dur: 0.25, beat: 0.0),

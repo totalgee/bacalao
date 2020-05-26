@@ -51,21 +51,21 @@ BacalaoSpatialSettings {
 		sourceDict.clear;
 	}
 
-	set { arg defName ... controlsAndValues;
-		var source = sourceDict.at(defName.asSymbol);
+	set { arg trkName ... controlsAndValues;
+		var source = sourceDict.at(trkName.asSymbol);
 		if (source.notNil and: { source.synth.notNil }) {
 			source.synth.set(*controlsAndValues);
 		} {
-			"spatial encoder not found for %".format(defName).error;
+			"spatial encoder not found for %".format(trkName).error;
 		}
 	}
 
-	map { arg defName ... controlsAndValues;
-		var source = sourceDict.at(defName.asSymbol);
+	map { arg trkName ... controlsAndValues;
+		var source = sourceDict.at(trkName.asSymbol);
 		if (source.notNil and: { source.synth.notNil }) {
 			source.synth.map(*controlsAndValues);
 		} {
-			"spatial encoder not found for %".format(defName).error;
+			"spatial encoder not found for %".format(trkName).error;
 		}
 	}
 
@@ -114,7 +114,7 @@ BacalaoSpatialSettings {
 		}
 	}
 
-	prPlayPattern { arg defName, pattern, quant;
+	prPlayPattern { arg trkName, pattern, quant;
 		var clock = owningBacalao.clock;
 		quant = (quant ?? { #[1, 0] }) * clock.beatsPerBar;
 		// Stretch it so the durations in bars are converted to beats on our clock
@@ -124,23 +124,23 @@ BacalaoSpatialSettings {
 			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern << Pbind(\group, sourceGroup, \out, decoderBus));
 		};
 
-		^Pdef(defName.asSymbol, pattern).play(clock, quant: quant);
+		^Pdef(trkName.asSymbol, pattern).play(clock, quant: quant);
 	}
 
-	playPat { arg defName, pattern, quant = 1;
-		^this.prPlayPattern(defName, Pn(pattern, inf), quant);
+	playPat { arg trkName, pattern, quant = 1;
+		^this.prPlayPattern(trkName, Pn(pattern, inf), quant);
 	}
 
-	oncePat { arg defName, pattern, quant = 1;
-		^this.prPlayPattern(defName, pattern, quant);
+	oncePat { arg trkName, pattern, quant = 1;
+		^this.prPlayPattern(trkName, pattern, quant);
 	}
 
-	stopPat { arg defNameOrNames;
-		if (defNameOrNames.isSequenceableCollection.not and: {defNameOrNames.isString.not }) {
-			defNameOrNames = defNameOrNames.asArray;
+	stopPat { arg trkNameOrNames;
+		if (trkNameOrNames.isSequenceableCollection.not and: {trkNameOrNames.isString.not }) {
+			trkNameOrNames = trkNameOrNames.asArray;
 		};
-		defNameOrNames.do{ arg defName;
-			Pdef(defName.asSymbol).stop;
+		trkNameOrNames.do{ arg trkName;
+			Pdef(trkName.asSymbol).stop;
 		};
 	}
 
@@ -285,8 +285,8 @@ BacalaoSpatialSettings {
 
 	spatialFree { arg playDefault = true;
 		if (spatial.notNil) {
-			var defs = spatial.sourceDict.keys;
-			defs.do(this.despatialize(_, playDefault));
+			var trks = spatial.sourceDict.keys;
+			trks.do(this.despatialize(_, playDefault));
 			spatial.free;
 			spatial = nil;
 		}
@@ -301,12 +301,12 @@ BacalaoSpatialSettings {
 		^BacalaoSpatialSource(source, sourceBus)
 	}
 
-	despatialize { arg defName, playDefault = true;
-		var source = spatial !? { spatial.sourceDict[defName = defName.asSymbol] };
+	despatialize { arg trkName, playDefault = true;
+		var source = spatial !? { spatial.sourceDict[trkName = trkName.asSymbol] };
 		if (source.notNil) {
-			var p = this.proxy(defName);
+			var p = this.proxy(trkName);
 			var oldQuant = p.quant;
-			"stopping spatialization for %".format(defName).warn;
+			"stopping spatialization for %".format(trkName).warn;
 			if (p.isPlaying) { p.stop(0.3) };
 			if (playDefault) { p.quant_(0).play(out: 0, fadeTime: 0.3) };
 			p.quant = oldQuant;
@@ -314,14 +314,14 @@ BacalaoSpatialSettings {
 				source.synth.debug("freeing").free;
 				source.bus.debug("freeing").free;
 			}.defer(0.3 + 0.01);
-			spatial.sourceDict[defName] = nil;
+			spatial.sourceDict[trkName] = nil;
 		} {
-			"spatialization wasn't on for %".format(defName).warn;
+			"spatialization wasn't on for %".format(trkName).warn;
 		}
 	}
 
-	spatialize { arg defName, stereo = true, azDeg = 0, elevDeg = 0, radius = 2, widthDeg = 60;
-		var source = spatial !? { spatial.sourceDict[defName = defName.asSymbol] };
+	spatialize { arg trkName, stereo = true, azDeg = 0, elevDeg = 0, radius = 2, widthDeg = 60;
+		var source = spatial !? { spatial.sourceDict[trkName = trkName.asSymbol] };
 		if (spatial.isNil) {
 			"Call spatialInit before trying to spatialize".warn;
 			^this
@@ -329,10 +329,10 @@ BacalaoSpatialSettings {
 
 		if (source.isNil) {
 			source = this.prCreateSpatialSource(stereo);
-			spatial.sourceDict[defName] = source;
+			spatial.sourceDict[trkName] = source;
 		};
 		{
-			var p = this.proxy(defName);
+			var p = this.proxy(trkName);
 			var encoder = source.synth;
 			var bus = source.bus;
 			encoder.set(\az, azDeg.degrad, \elev, elevDeg.degrad, \radius, radius.max(0.1));
@@ -342,7 +342,7 @@ BacalaoSpatialSettings {
 				if (p.isPlaying) { p.stop(0.3) } { "Proxy wasn't yet playing...".postln; };
 				p.quant_(0).play(out: bus, group: spatial.sourceGroup, fadeTime: 0.3, addAction: \addToHead);
 				p.quant = oldQuant;
-				"Spatialized % on % source % (bus % group %)".format(defName, stereo.if("stereo","mono"), encoder, bus, spatial.sourceGroup).postln;
+				"Spatialized % on % source % (bus % group %)".format(trkName, stereo.if("stereo","mono"), encoder, bus, spatial.sourceGroup).postln;
 			}
 		}.value;
 	}

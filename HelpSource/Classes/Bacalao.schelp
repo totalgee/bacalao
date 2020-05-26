@@ -79,10 +79,10 @@ b.tempo = 0.4;
 // Get a simple loop going, using default SynthDef
 b.p(\simple, deg"0 1 2 3");
 
-// Add a second def, sort of a bass line
+// Add a second track, sort of a bass line
 b.p(\bass, deg"[-7@3 [~ -8]]@2");
 
-// Add a third definition to accompany the first
+// Add a third track to accompany the first
 b.p(\accompaniment, deg"[[0 2 4]*4]" << amp"0.05");
 
 // Modify (redefine) the accompaniment
@@ -91,7 +91,7 @@ b.p(\accompaniment, deg"[~ [0 2 4]*4]" << amp"0.05");
 // Fade out the accompaniment over six beats (a bar and a half)
 b.clear(\accompaniment, 6);
 
-// Fade out all remaining defs over eight beats (two bars)
+// Fade out all remaining tracks over eight beats (two bars)
 [\simple, \bass].do(b.clear(_, 8));
 ::
 
@@ -116,21 +116,21 @@ Should the new instance print out debugging information?  Default
 value (if not specified) is true.
 
 argument:: quant
-What clock quantization should pattern definitions use when not specified explicitly?
+What clock quantization should track patterns use when not specified explicitly?
 Default value (if not specified) is nil.
 
 INSTANCEMETHODS::
 
 METHOD:: p
 
-Make a named pattern definition, using an Event pattern. The 'p' could be
+Make a named track pattern, using an Event pattern. The 'p' could be
 considered "pattern" or "play". Sets a looping pattern playing on the
 named NodeProxy.
 
-argument:: defName
-A name/label for the definition. If not a link::Classes/Symbol::, it will
+argument:: trkName
+A name/label for the track. If not a link::Classes/Symbol::, it will
 be converted to one. An link::Classes/Association:: may be used, in the form
-code::defName -> sourceIndex::. This will apply the definition to that
+code::trkName -> sourceIndex::. This will apply the definition to that
 (integer) sub-source index. If no sourceIndex is specified, then the main
 (0) source will be set, and all other sub-sources will be removed.
 
@@ -138,7 +138,7 @@ argument:: pattern
 The Event pattern (link::Classes/Pbind::) to play. Typically this will be
 created by several patterns joined by link::Classes/PtimeChain:: or
 link::Classes/Pchain::. Sending nil as the pattern stops playback of
-the named definition/slot.
+the named track/slot.
 
 argument:: dur
 Optional duration (defaults to 0) for the pattern.
@@ -186,7 +186,7 @@ s.waitForBoot {
         8.wait;
 		b.tempo = 1.5.debug("tempo"); // set tempo to 90 bpm (1.5 beats per second)
         8.wait;
-		[\syn, \bass].do(b.clear(_, 5)); // fade out all defs over 5 seconds
+		[\syn, \bass].do(b.clear(_, 5)); // fade out all tracks over 5 seconds
 	}.fork(b.clock);
 }
 )

@@ -8,6 +8,10 @@ Bacalao {
 	var <quant;
 	// Collection of 2-element Arrays [VSTPluginController, NodeProxy], looked up by "name" (a Symbol)
 	var <vstDict;
+	// Dictionary of default Event properties per track
+	// Note that using '*' as the trkName (equivalent to $*) will
+	// set global defaults, shared by all trks.
+	var <trkDefaults;
 	var <spatial; // Settings for spatialization (BacalaoSpatialSettings)
 
 	*initClass {
@@ -28,7 +32,7 @@ Bacalao {
 		Bacalao.prSetupSynthDefs();
 
 		Bacalao.config();
-		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), nil).initLibrary.start.prSetupCmdPeriod.push;
+		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), (), nil).initLibrary.start.prSetupCmdPeriod.push;
 	}
 
 	*config {
@@ -41,7 +45,7 @@ Bacalao {
 			viio: [6,8,10]
 		);
 		chords.keysValuesDo{ arg k, v;
-			Bacalao.setParserVariable(k, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[-7,0,0]]);
+			Bacalao.varSet(k, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[-7,0,0]]);
 		};
 
 		{
@@ -49,21 +53,21 @@ Bacalao {
 			this.setDictChars(freq, $a, $z, (_+60).midicps);
 			this.setDictChars(freq, $A, $Z, (_+36).midicps);
 			this.setDictChars(freq, $0, $9, (_+60).midicps);
-			Bacalao.setParserVariable('freq', freq);
+			Bacalao.varSet('freq', freq);
 		}.value;
 		{
 			var amp = ();
 			this.setDictChars(amp, $a, $z, _.lincurve(0,25, 0,1, 1));
 			this.setDictChars(amp, $A, $Z, _.lincurve(0,25, 0,1, -1));
 			this.setDictChars(amp, $0, $9, _.lincurve(0,9, 0,1, 0));
-			Bacalao.setParserVariable('amp', amp);
+			Bacalao.varSet('amp', amp);
 		}.value;
 		{
 			var pan = ();
 			this.setDictChars(pan, $a, $z, _.linlin(0,25, -1,1));
 			this.setDictChars(pan, $A, $Z, _.linlin(0,25, -1,1).cubed);
 			this.setDictChars(pan, $0, $9, _.linlin(0,9, -1,1));
-			Bacalao.setParserVariable('pan', pan);
+			Bacalao.varSet('pan', pan);
 		}.value;
 	}
 
@@ -144,7 +148,7 @@ Bacalao {
 				var delayMaxPeak = Delay1.ar(maxPeak);
 				var overTrig = delayMaxPeak > limitCtl;
 				var limited = Limiter.ar(safeOuts, limitCtl); // safeOuts.clip2(limitCtl);
-				(delayMaxPeak / limitCtl).ampdb.poll((delayMaxPeak > maxPeak) * overTrig, "Audio peak exceeded limit by dB");
+				(delayMaxPeak / limitCtl).ampdb.round(0.1).poll((delayMaxPeak > maxPeak) * overTrig, "Audio peak exceeded limit by dB");
 				ReplaceOut.ar(0, limited);
 			}
 		});
@@ -158,19 +162,19 @@ Bacalao {
 	// These may be single values, but they may also be arrays or Dictionaries,
 	// in which case the variable:key syntax may be used to access them. This
 	// lets you define multiple values for a variable, like:
-	//   b.setParserVariable('bd', [36, 37, 48, 49]);
+	//   b.varSet('bd', [36, 37, 48, 49]);
 	//   note"bd:3" --> would produce Pbind(\note, 49)
-	*setParserVariable { arg key, values;
+	*varSet { arg key, values;
 		this.vars[key.asSymbol] = values;
 	}
 
-	setParserVariable { arg key, values;
-		Bacalao.setParserVariable(key, values);
+	varSet { arg key, values;
+		Bacalao.varSet(key, values);
 	}
 
 	// This allows the key alone or with a colon to sub-index (e.g. 'bd:3')
-	// (See also PnsymRest.prLookupVariable)
-	*lookupVariable { arg key, dict;
+	// (See also PnsymRest.prVarLookup)
+	*varLookup { arg key, dict;
 		var parserVariables = dict ?? { this.vars };
 		var elem = key.asString;
 		^parserVariables !? {
@@ -197,12 +201,12 @@ Bacalao {
 		server.boot;
 	}
 
-	lookupVariable { arg key, dict;
+	varLookup { arg key, dict;
 		// dict may be nil (will use Bacalao vars)
-		^Bacalao.lookupVariable(key, dict);
+		^Bacalao.varLookup(key, dict);
 	}
 
-	*printVariables {
+	*varPrint {
 		var parserVariables = this.vars;
 		var buffers = ();
 		var index = 0;
@@ -211,7 +215,17 @@ Bacalao {
 			if (v.isKindOf(Buffer) or: { v.first.isKindOf(Buffer) }) {
 				buffers[k] = v;
 			} {
-				var suffix = if (v.size > 0) { ":% ".format(v.size) } { " " };
+				var suffix = if (v.size > 0) {
+					if (v.isKindOf(SequenceableCollection)) {
+						// Show number of elements in Array or similar
+						":% ".format(v.size)
+					} {
+						// Show the number of keys in Dictionary/Event
+						"(%) ".format(v.size)
+					}
+				} {
+					" "
+				};
 				if (index.mod(8) == 0) { "".postln };
 				(k.asString ++ suffix).post;
 				index = index + 1;
@@ -226,8 +240,8 @@ Bacalao {
 		"\n".postln;
 	}
 
-	printVariables {
-		Bacalao.printVariables();
+	varPrint {
+		Bacalao.varPrint();
 	}
 
 	*vars {
@@ -298,7 +312,7 @@ Bacalao {
 		^vstDict.collect(_.last) ++ (Ndef.all[server.name] ?? ());
 	}
 
-	defs {
+	trks {
 		var namesAndProxies = this.prGetNamesAndProxies;
 		^namesAndProxies.asKeyValuePairs.clump(2).select{ arg kv;
 			kv[1].numChannels.notNil
@@ -319,16 +333,42 @@ Bacalao {
 		^w;
 	}
 
+	defGet { arg trkName;
+		var dict = trkDefaults[trkName = trkName.asSymbol];
+		dict ?? {
+			dict = ();
+			trkDefaults[trkName] = dict;
+		}
+		^dict
+	}
+
+	defAdd { arg trkName, patternPairs;
+		var dict = this.defGet(trkName);
+		if (patternPairs.notNil) {
+			dict.putAll(patternPairs);
+		};
+		^dict
+	}
+
+	defSet { arg trkName, patternPairs;
+		var dict = this.defGet(trkName);
+		dict.clear();
+		if (patternPairs.notNil) {
+			dict.putAll(patternPairs);
+		};
+		^dict
+	}
+
 	// Play a pattern once on the named NodeProxy.
-	once { arg defName, pattern, quant;
+	once { arg trkName, pattern, quant;
 		var slot = nil;
-		if (defName.isKindOf(Association)) {
-			#defName, slot = [defName.key, defName.value];
+		if (trkName.isKindOf(Association)) {
+			#trkName, slot = [trkName.key, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
-			this.prChangePattern(defName.asSymbol, slot, pattern, nil, quant);
+			this.prChangePattern(trkName.asSymbol, slot, pattern, nil, quant);
 		} {
-			this.prSetSource(defName.asSymbol, slot, pattern, quant);
+			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
 		};
 	}
 
@@ -338,51 +378,113 @@ Bacalao {
 	// Durations > 0 will truncate or extend the pattern as needed to produce
 	// exactly the requested duration. By default (if quant is unspecified) the
 	// quantization will be a multiple of the duration ([dur, 0]).
-	p { arg defName, pattern, dur=0, quant, role;
+	p { arg trkName, pattern, dur=0, quant, role;
 		var slot;
-		if (defName.isKindOf(Association)) {
-			#defName, slot = [defName.key, defName.value];
+		if (trkName.isKindOf(Association)) {
+			#trkName, slot = [trkName.key, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
-			this.prChangePattern(defName.asSymbol, slot, pattern, dur, quant, role);
+			this.prChangePattern(trkName.asSymbol, slot, pattern, dur, quant, role);
 		} {
-			this.prSetSource(defName.asSymbol, slot, pattern, quant);
+			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
 		};
 	}
 
-	set { arg defName, control, valueOrFunc;
-		var np = this.proxy(defName);
-		var value = valueOrFunc.isKindOf(Function).if{ NodeProxy(server).source_(valueOrFunc) } { valueOrFunc };
-		np.set(control, value);
+	prGetControlValue { arg proxy, controlName;
+		var value = proxy.nodeMap[controlName];
+		if (value.notNil) {
+			^value.value
+		} {
+			// There is no set value for the control,
+			// so see if there is some SynthDef that
+			// uses it as a control, and if there's only
+			// one (or all have the same value), return
+			// that as the "current" value. This will
+			// conflict if there are several different
+			// Synths with different defaults for the param.
+			var control;
+			var obj = proxy.objects.detect{ arg obj;
+				if (obj.isKindOf(SynthDefControl)) {
+					control = obj.synthDef.allControlNames.detect{ arg c; c.name == controlName };
+					control.notNil
+				} {
+					false
+				}
+			};
+			^control !? { control.defaultValue }
+		}
 	}
 
-	pset { arg defName, pattern, dur=0, quant;
-		this.p(defName, pattern, dur, quant, \pset);
+	get { arg trkName, controlName, valueOrFunc, fadeTime = 2;
+		var np = this.proxy(trkName);
+		^np !? { this.prGetControlValue(np, controlName) }
 	}
 
-	xset { arg defName, pattern, dur=0, quant;
-		this.p(defName, pattern, dur, quant, \xset);
+	set { arg trkName, controlName, valueOrFunc, fadeTime = 2;
+		var np = this.proxy(trkName);
+		valueOrFunc.isKindOf(Function).if{
+			var value = NodeProxy(server).source_(valueOrFunc);
+			var oldFadeTime = np.fadeTime;
+			np.fadeTime = fadeTime;
+			np.set(controlName, value);
+			np.fadeTime = oldFadeTime;
+		} {
+			if (valueOrFunc.isNil) {
+				// Clear an existing "set"
+				np.set(controlName, valueOrFunc)
+			} {
+				var targetValue = valueOrFunc;
+				var startValue = this.prGetControlValue(np, controlName);
+				if (targetValue.equalWithPrecision(startValue, 1e-4, 0.02) or: { fadeTime <= 0 }) {
+					"Setting from % to %".format(startValue, targetValue).postln;
+					np.set(controlName, targetValue)
+				} {
+					"Setting from % to % over % seconds".format(startValue, targetValue, fadeTime).postln;
+					this.prFade(
+						{ arg frac; np.set(controlName, frac.linlin(0, 1, startValue, targetValue)) },
+						{ np.set(controlName, targetValue) },
+						fadeTime);
+				}
+			}
+		}
+	}
+
+	pset { arg trkName, pattern, dur=0, quant;
+		this.p(trkName, pattern, dur, quant, \pset);
+	}
+
+	xset { arg trkName, pattern, dur=0, quant;
+		this.p(trkName, pattern, dur, quant, \xset);
+	}
+
+	prFade { arg setFunc, endFunc, fadeTime = 2, timeStep = 0.15;
+		var startTime = SystemClock.beats;
+		if (setFunc.isKindOf(Function).not) { ^this };
+		SystemClock.sched(0.01, { arg time;
+			var delta = time - startTime;
+			var fraction = delta / fadeTime;
+			if (delta > fadeTime) {
+				endFunc.value(1.0);
+				nil
+			} {
+				setFunc.value(fraction);
+				timeStep
+			}
+		});
 	}
 
 	// Set the playback volume of the playing NodeProxy, with optional fadeTime.
 	// e.g. b.db('drum', -12);
-	db { arg defName, db = 0, fadeTime = 2;
-		var np = this.proxy(defName);
-		if (fadeTime > 0 and: { db.dbamp.equalWithPrecision(np.vol, 0.01).not } ) {
+	db { arg trkName, db = 0, fadeTime = 2;
+		var np = this.proxy(trkName);
+		if (fadeTime > 0 and: { db.dbamp.equalWithPrecision(np.vol, 1e-4, 0.02).not } ) {
 			var startDb = np.vol.ampdb.max(-120);
 			var targetDb = db.max(-120);
-			var startTime = SystemClock.beats;
-			SystemClock.sched(0.01, { arg time;
-				var delta = time - startTime;
-				if (delta > fadeTime) {
-					np.vol = db.dbamp;
-					nil
-				} {
-					np.vol = delta.linlin(0, fadeTime, startDb, targetDb).dbamp;
-					// ("Fading with " ++ np.vol).postln;
-					0.15
-				}
-			})
+			"dB from % to % over % seconds".format(startDb, targetDb, fadeTime).postln;
+			this.prFade(
+				{ arg frac; np.vol = frac.linlin(0, 1, startDb, targetDb).dbamp },
+				{ np.vol = db.dbamp },
+				fadeTime);
 		} {
 			np.vol = db.dbamp;
 		}
@@ -395,15 +497,15 @@ Bacalao {
 	// Add a filter (needs array index > 0) to modify the NodeProxy
 	// e.g. b.fx(\drum -> 3, { arg in; JPverb.ar(in, 3) }, 0.3);
 	// You can clear fx in a slot with: b.fx(\drum -> 3);
-	fx { arg defNameAndIndex, filterFunc, wet=1;
-		var defName, index;
-		if (defNameAndIndex.isKindOf(Association).not) {
-			"defName and index should be an Association, e.g: b.fx(\\drum -> 10, ...)".error;
+	fx { arg trkNameAndIndex, filterFunc, wet=1;
+		var trkName, index;
+		if (trkNameAndIndex.isKindOf(Association).not) {
+			"trkName and index should be an Association, e.g: b.fx(\\drum -> 10, ...)".error;
 			^this;
 		};
-		#defName, index = [defNameAndIndex.key, defNameAndIndex.value];
+		#trkName, index = [trkNameAndIndex.key, trkNameAndIndex.value];
 		if (index.isInteger and: {index > 0}) {
-			var np = this.proxy(defName);
+			var np = this.proxy(trkName);
 			np[index] = filterFunc !? {\filter -> filterFunc};
 			this.sched({
 				np.set((\wet.asString ++ index).asSymbol, wet);
@@ -413,8 +515,8 @@ Bacalao {
 		}
 	}
 
-	fxClear { arg defName;
-		var np = this.proxy(defName);
+	fxClear { arg trkName;
+		var np = this.proxy(trkName);
 		np.objects.indices[1..].do(np[_] = nil);
 	}
 
@@ -426,7 +528,7 @@ Bacalao {
 		var buf = if (bufOrName.isKindOf(Buffer)) {
 			bufOrName
 		} {
-			var lookup = Bacalao.lookupVariable(bufOrName);
+			var lookup = Bacalao.varLookup(bufOrName);
 			if (lookup.isKindOf(Buffer).not) { Error("chop variable lookup didn't find a Buffer").throw };
 			lookup
 		};
@@ -476,19 +578,19 @@ Bacalao {
 	}
 
 
-	vstInit { arg defName, vstName, programPath, bankAndProgram, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
+	vstInit { arg trkName, vstName, programPath, bankAndProgram, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
 		if (Bacalao.prVSTPluginInstalled.not) { ^this };
 		//programPath = programPath !? { VSTPlugin.prResolvePath(programPath, false).postln };
 		server.waitForBoot{
 			var vstController;
 			var vstProxy;
 			var dictEntry;
-			defName = defName.asSymbol;
+			trkName = trkName.asSymbol;
 			if (VSTPlugin.plugins.isEmpty) {
 				VSTPlugin.search(server, extraVstPluginSearchPath);
 				server.sync;
 			};
-			dictEntry = vstDict[defName];
+			dictEntry = vstDict[trkName];
 			if (dictEntry.notNil) {
 				#vstController, vstProxy = dictEntry;
 			};
@@ -508,12 +610,12 @@ Bacalao {
 				var bundle = server.makeBundle(false, {
 					vstController = vstController ?? {
 						var synth = Synth.basicNew(\bacalao_vsti, server, vstProxy.objects.first.nodeID);
-						VSTPluginController(synth).debug("New '%'".format(defName))
+						VSTPluginController(synth).debug("New '%'".format(trkName))
 					};
-					vstDict[defName] = [ vstController, vstProxy ];
+					vstDict[trkName] = [ vstController, vstProxy ];
 					vstController.open(vstName, editor: true, action: { arg vstController, success;
 						if (success) {
-							"Opened VSTPluginController for % with %".format(defName, vstName).postln;
+							"Opened VSTPluginController for % with %".format(trkName, vstName).postln;
 							vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
 							if (programPath.notNil) {
 								if (bankAndProgram.notNil) {
@@ -522,7 +624,7 @@ Bacalao {
 								this.prVstRead(vstController, programPath);
 							} {
 								if (bankAndProgram.isKindOf(Association)) {
-									this.vstBankProgram(defName, bankAndProgram.key, bankAndProgram.value);
+									this.vstBankProgram(trkName, bankAndProgram.key, bankAndProgram.value);
 								} {
 									if (bankAndProgram.notNil) {
 										"Expected bankAndProgram to be an Association (bank -> program), e.g. (3 -> 22)".warn;
@@ -540,31 +642,31 @@ Bacalao {
 	}
 
 	// free does clear plus removes the VST instrument (if there is one)
-	free { arg defNameOrNames, fadeTime = 0;
-		if (defNameOrNames.isSequenceableCollection.not or: {defNameOrNames.isString }) {
-			defNameOrNames = defNameOrNames.asArray;
+	free { arg trkNameOrNames, fadeTime = 0;
+		if (trkNameOrNames.isSequenceableCollection.not or: {trkNameOrNames.isString }) {
+			trkNameOrNames = trkNameOrNames.asArray;
 		};
-		defNameOrNames.do{ arg defName;
-			this.prFree(defName, fadeTime)
+		trkNameOrNames.do{ arg trkName;
+			this.prFree(trkName, fadeTime)
 		};
 	}
 
-	prFree { arg defName, fadeTime=0;
+	prFree { arg trkName, fadeTime=0;
 		var vstCtl;
-		this.clear(defName = defName.asSymbol, fadeTime);
+		this.clear(trkName = trkName.asSymbol, fadeTime);
 
-		vstCtl = this.vst(defName);
+		vstCtl = this.vst(trkName);
 		if (vstCtl.notNil) {
 			var extraTime = 1;
-			var vstProxy = this.proxy(defName);
+			var vstProxy = this.proxy(trkName);
 			// Remove the dictionary entry now, so any future vstInit
 			// will create a new VST instrument
-			vstDict[defName] = nil;
+			vstDict[trkName] = nil;
 
 			// Don't schedule on the Bacalao clock, because fadeTime should be in "wall" clock time
 			SystemClock.sched(fadeTime ? 0 + server.latency + extraTime, {
-				"Freeing VST %".format(defName).postln;
-				this.despatialize(defName, playDefault: false);
+				"Freeing VST %".format(trkName).postln;
+				this.despatialize(trkName, playDefault: false);
 				vstProxy.clear();
 				vstCtl.close;
 				nil
@@ -602,37 +704,37 @@ Bacalao {
 		}
 	}
 
-	vstRead { arg defName, programPath;
-		if (vstDict[defName = defName.asSymbol].notNil) {
-			this.prVstRead(vstDict[defName].first.debug("vstCtl in vstRead"), programPath);
+	vstRead { arg trkName, programPath;
+		if (vstDict[trkName = trkName.asSymbol].notNil) {
+			this.prVstRead(vstDict[trkName].first.debug("vstCtl in vstRead"), programPath);
 		} {
-			"vstRead: unrecognized definition".warn;
+			"vstRead: unrecognized track".warn;
 		}
 	}
 
-	vstPresetDir { arg defName, type = \user;
-		var vst = this.vst(defName.asSymbol);
+	vstPresetDir { arg trkName, type = \user;
+		var vst = this.vst(trkName.asSymbol);
 		^vst !? { vst.info.presetFolder(type) };
 	}
 
-	proxy { arg defName;
-		var vst = this.vst(defName = defName.asSymbol);
+	proxy { arg trkName;
+		var vst = this.vst(trkName = trkName.asSymbol);
 		^if (vst.notNil) {
-			vstDict.at(defName).last
+			vstDict.at(trkName).last
 		} {
-			Ndef(defName -> server.name)
+			Ndef(trkName -> server.name)
 		};
 	}
 
-	vst { arg defName;
-		var dictEntry = vstDict.at(defName.asSymbol);
+	vst { arg trkName;
+		var dictEntry = vstDict.at(trkName.asSymbol);
 		^dictEntry !? { dictEntry.first };
 	}
 
 	// Can send bank and program as separate arguments, or
 	// a single Association (bank -> program) to the bank argument.
-	vstBankProgram { arg defName, bank, program, quant = #[1, 0.925];
-		var vst = this.vst(defName);
+	vstBankProgram { arg trkName, bank, program, quant = #[1, 0.925];
+		var vst = this.vst(trkName);
 		if (bank.isKindOf(Association)) {
 			#bank, program = [bank.key, bank.value];
 		};
@@ -646,25 +748,25 @@ Bacalao {
 				midi.program(0, program-1);
 			}, quant);
 		} {
-			"VST instrument '%' is not defined".format(defName).postln;
+			"VST instrument '%' is not defined".format(trkName).postln;
 		}
 	}
 
-	clear { arg defNameOrNames, fadeTime = 1;
-		if (defNameOrNames.isSequenceableCollection.not and: {defNameOrNames.isString.not }) {
-			defNameOrNames = defNameOrNames.asArray;
+	clear { arg trkNameOrNames, fadeTime = 1;
+		if (trkNameOrNames.isSequenceableCollection.not and: {trkNameOrNames.isString.not }) {
+			trkNameOrNames = trkNameOrNames.asArray;
 		};
-		defNameOrNames.do{ arg defName;
-			this.prClear(defName, fadeTime)
+		trkNameOrNames.do{ arg trkName;
+			this.prClear(trkName, fadeTime)
 		};
 	}
 
-	prClear { arg defName, fadeTime=1;
+	prClear { arg trkName, fadeTime=1;
 		// Clear an existing Ndef (and ignore everything else)
-		var vst = this.vst(defName = defName.asSymbol);
-		var ndef = this.proxy(defName);
+		var vst = this.vst(trkName = trkName.asSymbol);
+		var ndef = this.proxy(trkName);
 		if (verbose) {
-			"Clearing Ndef(%) (fade %)".format(defName, fadeTime).postln;
+			"Clearing Ndef(%) (fade %)".format(trkName, fadeTime).postln;
 		};
 
 		// Note that if we called ndef.clear(fadeTime) here,
@@ -675,8 +777,8 @@ Bacalao {
 
 		// Don't schedule on the Bacalao clock, because fadeTime should be in "wall" clock time
 		SystemClock.sched(fadeTime ? 0 + server.latency, {
-			this.prClearOtherPatternSlots(defName);
-			this.prRemoveUnusedPatternSlots(defName);
+			this.prClearOtherPatternSlots(trkName);
+			this.prRemoveUnusedPatternSlots(trkName);
 			if (vst.notNil) {
 				// For VST instruments, we don't want to ever clear/free the
 				// underlying NodeProxy, otherwise we'd have to reload and
@@ -684,39 +786,39 @@ Bacalao {
 
 				// But we do want to clear effects from the VST proxy
 				// and reset the playback volume.
-				this.fxClear(defName);
-				this.db(defName, 0);
+				this.fxClear(trkName);
+				this.db(trkName, 0);
 
 				// Perform a soft bypass (it waits for sound to tail out, then stops processing to save CPU)
 				ndef.set(\bypass, 2);
 			} {
 				// For regular (SC Synth-sourced) proxies, we can go ahead
 				// and get rid of the whole thing.
-				this.despatialize(defName, playDefault: false);
+				this.despatialize(trkName, playDefault: false);
 				ndef.clear();
 			};
 			nil
 		});
 	}
 
-	removeSlots { arg defName, indices;
+	removeSlots { arg trkName, indices;
 		indices.asArray.do{ arg i;
-			this.p(defName -> i, nil);
+			this.p(trkName -> i, nil);
 		}
 	}
 
-	// Return all the Pdefs that we use for "slots" with a given pattern def
+	// Return all the Pdefs that we use for "slots" with a given track
 	// (we use name mangling for this).
-	prGetPdefSlots { arg defName;
+	prGetPdefSlots { arg trkName;
 		^Pdef.all.select{ arg x;
-			"%\\/(nil|\\d+)\\/%".format(defName, server.name).matchRegexp(x.key.asString)
+			"%\\/(nil|\\d+)\\/%".format(trkName, server.name).matchRegexp(x.key.asString)
 		}
 	}
 
 	// Clear just sets the source to nil, relying on the Quant to say when it should go away.
-	prClearOtherPatternSlots { arg defName, except;
-		// "Clear '%' patterns for other slots".format(defName).postln;
-		this.prGetPdefSlots(defName).do{ arg pdef;
+	prClearOtherPatternSlots { arg trkName, except;
+		// "Clear '%' patterns for other slots".format(trkName).postln;
+		this.prGetPdefSlots(trkName).do{ arg pdef;
 			if (pdef != except) {
 				pdef.debug("stopping").source = nil;
 			}
@@ -724,34 +826,49 @@ Bacalao {
 	}
 
 	// Remove actually removes the Pdef if it's not set to any source at the moment
-	prRemoveUnusedPatternSlots { arg defName;
-		// "Removing unused '%' slot patterns".format(defName).postln;
-		this.prGetPdefSlots(defName).do{ arg pdef;
+	prRemoveUnusedPatternSlots { arg trkName;
+		// "Removing unused '%' slot patterns".format(trkName).postln;
+		this.prGetPdefSlots(trkName).do{ arg pdef;
 			if (pdef.source.isNil) {
-				var slotNum = pdef.key.asString.drop(defName.asString.size + 1).asInteger;
-				pdef.debug("'" ++ defName ++ "' source (slot " ++ slotNum ++ ") still nil...removing");
+				var slotNum = pdef.key.asString.drop(trkName.asString.size + 1).asInteger;
+				pdef.debug("'" ++ trkName ++ "' source (slot " ++ slotNum ++ ") still nil...removing");
 				pdef.remove;
-				if (this.vst(defName).isNil) {
-					this.proxy(defName).debug("Removing Ndef slot").removeAt(slotNum, 0);
+				if (this.vst(trkName).isNil) {
+					this.proxy(trkName).debug("Removing Ndef slot").removeAt(slotNum, 0);
 				}
 			}
 		}
 	}
 
-	prChangePattern { arg defName, slot, pattern, loopDur, patternQuant, role;
+	prChangePattern { arg trkName, slot, pattern, loopDur, patternQuant, role;
 		// Pdef doesn't have a per-Server ProxySpace, so
-		// we make up a "unique" name by combining the def name
+		// we make up a "unique" name by combining the track name
 		// and this instance's Server name.
 		var replacePatterns = slot.isNil;
 		// Note we don't use +/+ here for cross-platform reasons..we always want joining with '/'
-		var pdefName = (defName.asString ++ $/ ++ (slot ? 0) ++ $/ ++ server.name).asSymbol.debug("pdefName");
-		var pdef, ndef, vst = this.vst(defName = defName.asSymbol);
+		var pdefName = (trkName.asString ++ $/ ++ (slot ? 0) ++ $/ ++ server.name).asSymbol.debug("pdefName");
+		var pdef, ndef, vst = this.vst(trkName = trkName.asSymbol);
 
 		// Stretch it so the durations in bars are converted to beats on our clock
 		if (pattern.notNil) {
+			var globalDefaultDict = this.defGet('*');
+			var defaultDict = this.defGet(trkName);
+			// Could potentially use Pfset here, but time-chaining the defaults
+			// seems to work better (possibly due to some glitches in PtimeChain
+			// with cleanup functions?)
+
+			// NOTE: Running Ptrace (or pat.trace) on these patterns can screw
+			//       up the defaults. For example, if your track default has (amp: 0)
+			//       it can stop notes from playing, even in patterns that
+			//       explicitly set an amp, when they're being "traced"!
+
 			// We set default mask 1 so we can use it for triggering with pset
 			// (goes to 0/Rest when using PmaskBjork or degrade).
-			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern << Pbind(\mask, 1));
+			pattern = pattern << Pbind(\mask, 1);
+			if (defaultDict.notNil) {
+				pattern = pattern << defaultDict << globalDefaultDict;
+			};
+			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern);
 		};
 
 		if (loopDur.notNil) {
@@ -771,14 +888,14 @@ Bacalao {
 		// The quantization until this point has been in bars, not beats
 		patternQuant = (patternQuant ?? { #[1, 0] }) * clock.beatsPerBar;
 		pdef = Pdef(pdefName).clock_(clock).quant_(patternQuant);
-		ndef = this.proxy(defName).clock_(clock).quant_(patternQuant);
+		ndef = this.proxy(trkName).clock_(clock).quant_(patternQuant);
 		if (replacePatterns) {
 			// Set the source of other slots to nil (uses current Quant)
-			this.prClearOtherPatternSlots(defName, except: pdef);
+			this.prClearOtherPatternSlots(trkName, except: pdef);
 
 			// Remove unused ones a bit later (when sources are still nil)
 			pdef.sched{
-				this.prRemoveUnusedPatternSlots(defName)
+				this.prRemoveUnusedPatternSlots(trkName)
 			};
 		};
 		if (vst.notNil and: { role.isNil }) {
@@ -799,7 +916,7 @@ Bacalao {
 			} {
 				if (ndef[slot ? 0] != pdef) {
 					if (verbose) {
-						"Setting Ndef(%) source (%) to Pdef(%)".format(defName,
+						"Setting Ndef(%) source (%) to Pdef(%)".format(trkName,
 							slot ? 0, pdefName).postln
 					};
 					ndef[slot ? 0] = pdef;
@@ -813,18 +930,18 @@ Bacalao {
 		};
 		if (ndef.isMonitoring.not) {
 			if (verbose) {
-				"Playing Ndef(%)".format(defName).postln
+				"Playing Ndef(%)".format(trkName).postln
 			};
 			ndef.play;
 		}
 	}
 
-	prSetSource { arg defName, slot, source, quant;
+	prSetSource { arg trkName, slot, source, quant;
 		// Use this when setting a NodeProxy, single Event or Function
 		// as source of the NodeProxy (not PatternProxy).
 		var replacePatterns = slot.isNil;
 		// Note we don't use +/+ here for cross-platform reasons..we always want joining with '/'
-		var ndef, vst = this.vst(defName = defName.asSymbol);
+		var ndef, vst = this.vst(trkName = trkName.asSymbol);
 		if (vst.notNil and: { replacePatterns || slot == 0 }) {
 			"Can't replace slot 0 source of a VST proxy".warn;
 			^this;
@@ -832,17 +949,17 @@ Bacalao {
 
 		// The quantization until this point has been in bars, not beats
 		quant = (quant ?? { #[1, 0] }) * clock.beatsPerBar;
-		ndef = this.proxy(defName).clock_(clock).quant_(quant);
+		ndef = this.proxy(trkName).clock_(clock).quant_(quant);
 		if (replacePatterns) {
 			// Set the source of other slots to nil (uses current Quant)
-			this.prClearOtherPatternSlots(defName, except: nil);
+			this.prClearOtherPatternSlots(trkName, except: nil);
 		};
 
-		"Setting % source %".format(defName, slot ? 0).postln;
+		"Setting % source %".format(trkName, slot ? 0).postln;
 		ndef[slot ? 0] = source;
 		if (ndef.isMonitoring.not) {
 			if (verbose) {
-				"Playing Ndef(%)".format(defName).postln
+				"Playing Ndef(%)".format(trkName).postln
 			};
 			ndef.play(out: 0, group: ndef.homeServer.defaultGroup);
 		}
@@ -875,14 +992,12 @@ BacalaoParser {
 	classvar simpleElem;
 	const word = "\\b[[:alpha:]_]\\w*\\b";
 	const label = "(?:[[:alnum:]]+)";
-	// [ overallMatch, defName ]
-	const defName = "^\\s*\\b(\\w+)\\s*:";
+	// [ overallMatch, trkName ]
+	const trkName = "^\\s*\\b(\\w+)\\s*:";
 	// [ overallMatch, cmd, argStr ]
 	const subCmd = "[:&]\\s*(\\w+)([^:&]*)";
 	const <numericExpression = "[0-9./*+()-]+";
 	classvar globalCmd;
-	classvar instDefName;
-	classvar midiInstDefCmd;
 	classvar cmdArgs;
 
 	*initClass {
@@ -922,8 +1037,6 @@ BacalaoParser {
 		// globalCmd must not include a ':'
 		// [ overallMatch, command, argStr ]
 		globalCmd = "^\\s*(" ++ word ++ ")\\s*([^[:space:]:&]?[^:&]*?)\\s*$";
-		instDefName = "^\\s*inst\\s*\\b(\\w+)\\s*:";
-		midiInstDefCmd = instDefName ++ "\\s*midi\\(\\s*([^,]*),\\s*([^,]*),\\s*([^,]*)\\)\\s*$";
 
 		//////////
 		// Abbreviations for Event keys
@@ -1002,7 +1115,7 @@ BacalaoParser {
 
 		// Replace Bacalao parser variables with their values
 		^elems.collect{ arg elem;
-			var substitute = Bacalao.lookupVariable(elem, parserVariables);
+			var substitute = Bacalao.varLookup(elem, parserVariables);
 			if (substitute.isKindOf(Prand)) {
 				// The "elem" must convert to a string with no spaces
 				substitute = substitute.cs.reject(_.isSpace);
@@ -1486,8 +1599,8 @@ BacalaoParser {
 		^str.findRegexp(chord, offset).clump(2).collect(_.drop(1)).flatten;
 	}
 
-	*findDefName { arg str, offset=0;
-		^(str.findRegexp(defName, offset).flop[1] ?? #[]).clump(2)
+	*findTrkName { arg str, offset=0;
+		^(str.findRegexp(trkName, offset).flop[1] ?? #[]).clump(2)
 	}
 
 	*findSubCmd { arg str, offset=0;
@@ -1496,10 +1609,6 @@ BacalaoParser {
 
 	*findGlobalCmd { arg str, offset=0;
 		^(str.findRegexp(globalCmd, offset).flop[1] ?? #[]).clump(3)
-	}
-
-	*findInstDefCmd { arg str, offset=0;
-		^(str.findRegexp(midiInstDefCmd, offset).flop[1] ?? #[]).clump(5)
 	}
 
 	*getCmdArgs { arg cmd, argStr, failArgType, offset=0;

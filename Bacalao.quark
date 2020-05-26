@@ -6,7 +6,7 @@ var deps = [ "wslib", "Bjorklund", "SafetyNet" ];
         \author: "Glen Fraser",
      \copyright: "Glen Fraser, 2019-2020",
        \license: "GPL",
-       \version: "0.5.6",
+       \version: "0.5.26",
         \schelp: "Classes/Bacalao",
            \url: "https://github.com/totalgee/bacalao",
   \dependencies: deps,

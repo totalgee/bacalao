@@ -141,10 +141,10 @@ PnSafe : FilterPattern {
 // it also posts a warning.
 // It also handles indexing, using 'name:2' notation, and random
 // choice using 'name:r' notation.
-// (See also Bacalao.lookupVariable)
+// (See also Bacalao.varLookup)
 PnsymRest : Psym {
 
-	*prLookupVariable { arg dict, key;
+	*prVarLookup { arg dict, key;
 		var elem = key.asString;
 		^dict !? {
 			var variable, index, substitute;
@@ -175,7 +175,7 @@ PnsymRest : Psym {
 			^this.rest
 		} {
 			var lookupDict = dict ?? { this.lookupClass.all };
-			^(PnsymRest.prLookupVariable(lookupDict, key) ?? {
+			^(PnsymRest.prVarLookup(lookupDict, key) ?? {
 				("PnsymRest: '" ++ key ++ "' not found, using Rest").warn;
 				this.rest
 			})

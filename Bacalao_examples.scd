@@ -71,12 +71,12 @@ b.p(\a, deg"[0!(3,7) -7 4!(5,7) 7]@2" << leg"0.25")
 b.p(\a, deg"1*(3,8) [2 3]*(2,3,1)" << leg"0.25")
 
 // Set variables that can be used when parsing pattern strings
-b.setParserVariable(\sd, 61)
+b.varSet(\sd, 61)
 
 b.p(\a, midinote"sd*4")
 
 // Arrays can set as variables, then indexed using colon (e.g. "bd:0 bd:2" or (random) "bd:r")
-b.setParserVariable(\bd, [47,48,59,60]);
+b.varSet(\bd, [47,48,59,60]);
 
 // The parser variable Dictionary is pushed to the current Environment
 // when you're working with Bacalao, so -- as long as you haven't switched

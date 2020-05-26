@@ -191,15 +191,16 @@ TestPtimeChain : UnitTest {
 		this.assertEquals(results.asStream.nextN(expected.size, ()), expected, "Event at end");
 
 		e = (pan: 0.25, dur: 0.25);
-		~results = e << a << b;
-		~expected = [
+		results = e << a << b;
+		expected = [
 			(degree: 0, dur: 0.25, db: 0, pan: 0.25),
 			(degree: 0, dur: 0.25, db: 3, pan: 0.25),
 			(degree: 1, dur: 0.25, db: 6, pan: 0.25),
 			(degree: 2, dur: 0.25, db: 9, pan: 0.25),
 			(degree: 2, dur: 0.25, db: 0, pan: 0.25),
 			(degree: 3, dur: 0.25, db: 3, pan: 0.25),
-			nil
+			(degree: 0, dur: 0.25, db: 6, pan: 0.25),
+			(degree: 0, dur: 0.25, db: 9, pan: 0.25),
 		];
 		this.assertEquals(results.asStream.nextN(expected.size, ()), expected, "Event at start");
 	}
@@ -211,5 +212,31 @@ TestPtimeChain : UnitTest {
 		this.assertException({ a << "hello" }, Error, "no pattern in constructor (2)");
 		this.assertException({ a << b << nil }, Error, "no pattern in << operator");
 		this.assertException({ a << b << 5 }, Error, "no pattern in << operator (2)");
+	}
+
+	test_keyReuse {
+		// Test case with suggested fix from Scott Carver, to handle case of
+		// "downstream" events reading "upstream" events.
+		// See https://scsynth.org/t/time-aware-merging-of-two-event-pattern-streams/1482/15
+		var a = Pbind(\dur, 1);
+		var b = Pbind(\dur, 1/2, \pan, Pseq([0, Pkey(\pan)], inf));
+		var c = Pbind(\dur, 1/3, \pan, Pseq([-1, 1], inf));
+		var results = a << b << c;
+		//        111222333444555666 | 111222333444555666 | 111222333444555666 | 111222333444...
+		// a pan: 0                    +1                   -1                   +1
+		// b pan: 0        +1          +1       -1          -1       +1          +1       -1
+		// c pan: -1    +1    -1       +1    -1    +1       -1    +1    -1       +1   -1     +1
+
+		var expected = [
+			(dur: 1, pan: 0),
+			(dur: 1, pan: 1),
+			(dur: 1, pan: -1),
+			(dur: 1, pan: 1),
+			(dur: 1, pan: -1),
+			(dur: 1, pan: 1),
+			(dur: 1, pan: -1),
+			(dur: 1, pan: 1),
+		];
+		this.assertEquals(results.asStream.nextN(expected.size, ()), expected, "Event key reuse");
 	}
 }

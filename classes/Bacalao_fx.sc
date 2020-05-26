@@ -1,17 +1,17 @@
 +Bacalao {
 
-	fxPrintControls { arg defNameAndIndex;
-		var defName, indices, proxy;
+	fxPrintControls { arg trkNameAndIndex;
+		var trkName, indices, proxy;
 		var showKey = { arg k;
 			([\i_out, \out, \gate, \fadeTime].includes(k).not
 				and: {k.asString.keep(3) != "wet"})
 		};
-		if (defNameAndIndex.isKindOf(Association)) {
-			#defName, indices = [defNameAndIndex.key, defNameAndIndex.value.asArray];
+		if (trkNameAndIndex.isKindOf(Association)) {
+			#trkName, indices = [trkNameAndIndex.key, trkNameAndIndex.value.asArray];
 		} {
-			defName = defNameAndIndex;
+			trkName = trkNameAndIndex;
 		};
-		proxy = this.proxy(defName);
+		proxy = this.proxy(trkName);
 		indices = indices ?? { proxy.objects.indices };
 		indices.do{ arg index;
 			var obj = proxy.objects[index];
@@ -111,6 +111,8 @@
 			var sep = \delWobble.kr(delWobble, 0.1);
 			var delayTime = (\delTime.kr(delBeats/this.tempo, 1) - ControlDur.ir).max(0);
 			var fb = \delFb.kr(delFb, 0.1);
+			var delHpf = \delHpf.kr(400, 0.1);
+			var delLpf = \delLpf.kr(5000, 0.1);
 
 			var numChans = in.asArray.size;
 			var local = LocalIn.ar(numChans);
@@ -120,8 +122,8 @@
 				if (noiseLevel > 0) {
 					sig = sig * LPF.ar(WhiteNoise.ar(noiseLevel!numChans, 1), 1200);
 				};
-				sig = HPF.ar(sig, 400);
-				sig = LPF.ar(sig, 5000);
+				sig = HPF.ar(sig, delHpf);
+				sig = LPF.ar(sig, delLpf);
 				sig = sig.tanh;
 				left = DelayC.ar(sig.last, 0.5, LFNoise2.ar(11).range(0, sep));
 				right = DelayC.ar(sig.first, 0.5, LFNoise2.ar(11).range(sep, 0));
@@ -133,11 +135,53 @@
 		}
 	}
 
+	fxDelayPingPong { arg delBeats = 1.5, delFb = 0.5, delWobble = 0.002, noiseLevel = 0;
+		^{ arg in;
+			var sep = \delWobble.kr(delWobble, 0.1);
+			var delayTime = \delTime.kr(delBeats/this.tempo, 1);
+			var fb = \delFb.kr(delFb, 0.1);
+			var noise = \delNoise.kr(noiseLevel, 0.1);
+			var delHpf = \delHpf.kr(250, 0.1);
+			var delLpf = \delLpf.kr(5000, 0.1);
+			var numChans = in.asArray.size;
+
+			var delaySamps = max(0, delayTime * SampleRate.ir - ControlDur.ir).round;
+			var phase, feedbackChannels, delayed;
+			var buf = LocalBuf(SampleRate.ir * delayTime * 4, numChans).clear;
+			var frames = BufFrames.kr(buf);
+
+			// A customized version of PingPong UGen
+			phase = Phasor.ar(0, 1, 0, frames);
+			feedbackChannels = LocalIn.ar(numChans) * fb;
+			delayed = BufRd.ar(numChans, buf, (phase - delaySamps).wrap(0, frames), 0);
+
+			delayed = delayed * LPF.ar(WhiteNoise.ar(noise!numChans, 1), 1200);
+
+			delayed = HPF.ar(delayed, delHpf);
+			delayed = LPF.ar(delayed, delLpf);
+			delayed = delayed.tanh;
+			delayed[0] = DelayC.ar(delayed[0], 0.5, LFNoise2.ar(11).range(0, sep));
+			delayed[1] = DelayC.ar(delayed[1], 0.5, LFNoise2.ar(11).range(sep, 0));
+			LocalOut.ar(delayed);
+
+			BufWr.ar((Pan2.ar(in.sum * numChans.sqrt.reciprocal, 1) + feedbackChannels).rotate(1) <! delayed.asArray.first, buf, phase, 1);
+			delayed
+		}
+	}
+
+	fxDistort { arg gainIn = 30, gainOut = 0.4;
+		^{ arg in;
+			var distGain = \distGain.kr(gainIn, 0.1);
+			var distOut = \distOut.kr(gainOut, 0.1);
+			(in * distGain).softclip * distOut
+		}
+	}
+
 	fxCrush { arg bits = 4;
 		// This version rounds to the square root of values, so
 		// more precision is given to quiet sounds, less to loud
 		^{ arg in;
-			var crush = \crush.kr(bits).max(1);
+			var crush = \bits.kr(bits).max(1);
 			in.sqrt.round(0.5 ** (crush-1))**2
 		}
 	}
@@ -145,7 +189,7 @@
 	fxCrushHard { arg bits = 4;
 		// This is just normal, linear bit crushing
 		^{ arg in;
-			var crush = \crush.kr(bits).max(1);
+			var crush = \bits.kr(bits).max(1);
 			in.round(0.5 ** (crush-1))
 		}
 	}
@@ -154,6 +198,14 @@
 		^{ arg in;
 			var sr = \samplerate.kr(sampleRate).clip(1, SampleRate.ir);
 			Latch.ar(in, Impulse.ar(sr)).lag(sr.reciprocal*2)
+		}
+	}
+
+	fxDecimate { arg sampleRate = 8000.0, bits = 4;
+		^{ arg in;
+			var crushBits = \bits.kr(bits).max(1);
+			var sr = \samplerate.kr(sampleRate).clip(1, SampleRate.ir);
+			Decimator.ar(in, sr, crushBits)
 		}
 	}
 
