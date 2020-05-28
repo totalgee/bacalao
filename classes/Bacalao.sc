@@ -32,7 +32,7 @@ Bacalao {
 		Bacalao.prSetupSynthDefs();
 
 		Bacalao.config();
-		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), (), nil).initLibrary.start.prSetupCmdPeriod.push;
+		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), (), nil).start.prSetupCmdPeriod.push;
 	}
 
 	*config {
@@ -108,10 +108,10 @@ Bacalao {
 			var length = \length.kr(1);
 			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
 			var env = if (withGate) {
-				EnvGen.ar(Env.linen(0.01, length / rate, 0.01), doneAction: Done.none) *
+				EnvGen.ar(Env.linen(0.01, (length / rate - 0.02).max(0), 0.01), doneAction: Done.none) *
 				EnvGen.ar(Env.asr(0.01, 1, 0.01), \gate.kr(1), doneAction: Done.freeSelf);
 			} {
-				EnvGen.ar(Env.linen(0.01, length / rate, 0.01), doneAction: Done.freeSelf);
+				EnvGen.ar(Env.linen(0.01, (length / rate - 0.02).max(0), 0.01), doneAction: Done.freeSelf);
 			};
 			sig * env;
 		};
@@ -173,7 +173,9 @@ Bacalao {
 	}
 
 	// This allows the key alone or with a colon to sub-index (e.g. 'bd:3')
-	// (See also PnsymRest.prVarLookup)
+	// (See also PnsymRest.prVarLookup).
+	// Note: does not return the variable itself, but a separate object.
+	//       If you need the "raw" variable, use b.vars[key]
 	*varLookup { arg key, dict;
 		var parserVariables = dict ?? { this.vars };
 		var elem = key.asString;
@@ -268,8 +270,54 @@ Bacalao {
 		}
 	}
 
-	initLibrary {
+	prMakeVariableName { arg path, name;
+		name = (name ?? { path.asPathName.fileNameWithoutExtension });
+		name = name.asString.select{ arg ch; (($A.ascii..$Z.ascii) ++ ($a.ascii..$z.ascii) ++ ($0.ascii..$9.ascii) ++ $_).asAscii.includes(ch) };
+		name[0] = name[0].toLower;
+		^name.asSymbol
+	}
 
+	// Load a directory of audio files into a variable in the ~samp Dictionary.
+	// These sample instruments can then be played using:
+	//   b.loadSamples("/path/to/bd")
+	//   b.p(1, @~samp"bd bd:2")
+	loadSamples { arg dirPath, name;
+		var bufs;
+		var dict = (this.vars[\samp] ?? {
+			this.vars[\samp] = ();
+			this.vars[\samp]
+		});
+		name = this.prMakeVariableName(dirPath, name);
+		if (dict[name].notNil) {
+			"Overwriting ~samp key: '%'".format(name).warn
+		} {
+			"Creating ~samp key: '%'".format(name).postln
+		};
+		dict[name] = [];
+		bufs = (dirPath ++ "/*.wav").pathMatch.collect{ arg path;
+			Buffer.read(server, path, action: { arg buf;
+				"loaded %".format(buf).postln;
+				dict[name] = dict[name].add(
+					(buf: buf, start: 0, length: buf.duration, instrument: ('sample' ++ buf.numChannels).asSymbol)
+				)
+			})
+		};
+	}
+
+	// Load a single Buffer into a variable.
+	// These buffers can then be played/looped using b.chop:
+	//   b.loadBuffer("/path/to/mySample.wav")
+	//   b.p(1, b.chop(~mySample))
+	loadBuffer { arg filePath, name;
+		name = this.prMakeVariableName(filePath, name);
+		if (this.vars[name].notNil) {
+			"Overwriting buffer variable ~%".format(name).warn
+		} {
+			"Creating buffer variable ~%".format(name).postln
+		};
+		this.vars[name] = Buffer.read(server, filePath, action: { arg buf;
+			"loaded %".format(buf).postln;
+		});
 	}
 
 	prSetupCmdPeriod {
@@ -422,30 +470,52 @@ Bacalao {
 
 	set { arg trkName, controlName, valueOrFunc, fadeTime = 2;
 		var np = this.proxy(trkName);
-		valueOrFunc.isKindOf(Function).if{
-			var value = NodeProxy(server).source_(valueOrFunc);
-			var oldFadeTime = np.fadeTime;
-			np.fadeTime = fadeTime;
-			np.set(controlName, value);
-			np.fadeTime = oldFadeTime;
-		} {
-			if (valueOrFunc.isNil) {
-				// Clear an existing "set"
-				np.set(controlName, valueOrFunc)
+		var oldControl = np.nodeMap[controlName];
+		case
+		{ valueOrFunc.isNil } {
+			// Clear an existing "set"
+			if (oldControl.isKindOf(NodeProxy)) {
+				"Unmapping old mapped control".postln;
+				np.unmap(controlName);
 			} {
-				var targetValue = valueOrFunc;
-				var startValue = this.prGetControlValue(np, controlName);
-				if (targetValue.equalWithPrecision(startValue, 1e-4, 0.02) or: { fadeTime <= 0 }) {
-					"Setting from % to %".format(startValue, targetValue).postln;
-					np.set(controlName, targetValue)
-				} {
-					"Setting from % to % over % seconds".format(startValue, targetValue, fadeTime).postln;
-					this.prFade(
-						{ arg frac; np.set(controlName, frac.linlin(0, 1, startValue, targetValue)) },
-						{ np.set(controlName, targetValue) },
-						fadeTime);
-				}
+				"Unsetting control".postln;
+				np.unset(controlName);
+				// Not sure why we need to do this twice here, but we do...
+				np.unset(controlName);
 			}
+		}
+		{ valueOrFunc.isKindOf(Function) } {
+			var value = NodeProxy(server).source_(valueOrFunc);
+			// var oldFadeTime = np.fadeTime;
+			// np.fadeTime = fadeTime;
+			np.set(controlName, value);
+			// np.fadeTime = oldFadeTime;
+		}
+		{ valueOrFunc.isKindOf(Ndef) } {
+			np.set(controlName, valueOrFunc);
+		}
+		{
+			// Default case, for simple values
+			var targetValue = valueOrFunc;
+			var startValue = this.prGetControlValue(np, controlName);
+			if (targetValue.equalWithPrecision(startValue, 1e-4, 0.02) or: { fadeTime <= 0 }) {
+				"Setting from % to %".format(startValue, targetValue).postln;
+				np.set(controlName, targetValue)
+			} {
+				"Setting from % to % over % seconds".format(startValue, targetValue, fadeTime).postln;
+				this.prFade(
+					{ arg frac; np.set(controlName, frac.linlin(0, 1, startValue, targetValue)) },
+					{ np.set(controlName, targetValue) },
+					fadeTime);
+			}
+		};
+		// If it was a NodeProxy (but not Ndef), assume we created it
+		// and free it here, after a delay. If you want to play with
+		// setting your own NodeProxies, you should name them using Ndef,
+		// then you're responsible for freeing them yourself.
+		if (oldControl.isKindOf(NodeProxy) and: { oldControl.isKindOf(Ndef).not }) {
+			"Removing old control".postln;
+			clock.sched(server.latency + fadeTime + 0.5,{ oldControl.free; nil });
 		}
 	}
 
@@ -594,7 +664,7 @@ Bacalao {
 			if (dictEntry.notNil) {
 				#vstController, vstProxy = dictEntry;
 			};
-			vstProxy = vstProxy ?? { NodeProxy(server).clock_(clock) };
+			vstProxy = vstProxy ?? { this.proxy(trkName).clock_(clock) };
 			if (vstProxy.source != \bacalao_vsti) {
 				// Don't recreate Synth using VSTPlugin if not necessary
 				vstProxy.source = \bacalao_vsti;
@@ -777,6 +847,9 @@ Bacalao {
 
 		// Don't schedule on the Bacalao clock, because fadeTime should be in "wall" clock time
 		SystemClock.sched(fadeTime ? 0 + server.latency, {
+			var controlProxiesToDelete = ndef.nodeMap.asArray.select{arg val;
+				val.isKindOf(NodeProxy) and: { val.isKindOf(Ndef).not }
+			};
 			this.prClearOtherPatternSlots(trkName);
 			this.prRemoveUnusedPatternSlots(trkName);
 			if (vst.notNil) {
@@ -797,7 +870,10 @@ Bacalao {
 				this.despatialize(trkName, playDefault: false);
 				ndef.clear();
 			};
-			nil
+			controlProxiesToDelete.do{ arg proxy;
+				"Freeing old control proxy".postln;
+				proxy.free
+			};
 		});
 	}
 
@@ -1063,9 +1139,9 @@ BacalaoParser {
 		);
 		// Other event members without abbreviations
 		// root: 0, stepsPerOctave: 12, octaveRatio: 2.0, note: (not including root or octave),
-		// freq, tempo, dur: 1.0, stretch: 1.0, lag: 0.0, strum: 0.0, strumEndsTogether: false
+		// freq, tempo, dur: 1.0, lag: 0.0, strum: 0.0, strumEndsTogether: false
 		// amp, db: -20.0, pan: 0.0, trig: 0.5, group, out: 0, addAction: 0, variant: nil,
-		// timingOffset: 0, type: (e.g. \midi), latency: 0.2,
+		// type: (e.g. \midi), latency: 0.2,
 
 		// noteOn:  #{ arg chan=0, midinote=60, amp=0.1;
 		// noteOff: #{ arg chan=0, midinote=60, amp=0.1;
