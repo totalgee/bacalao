@@ -3,8 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 // First, create an instace for live coding...
-b = Bacalao();
-s.boot;
+b = Bacalao().boot;
 
 // Patterns can be defined using a special preprocessor syntax
 // The syntax is: Event key (parameter) name followed by a quoted string
@@ -43,6 +42,8 @@ b.p(\a, deg"0@4 5 7")
 
 // You can extend the overall pattern to last more bars
 b.p(\a, deg"[0 2 4 7]@4")
+// You can also use bar lines to divide things up (often easier to understand)
+b.p(\a, deg"0|2|4|7")
 
 // You can alternate values in the pattern (choose one each time through)
 b.p(\a, deg"<0 1> 2 3 <4 5 7>")
@@ -117,7 +118,7 @@ deg"0 1 Rest() 3".trace.play
 deg"0 ~@2 3".trace.play
 freq"440 <~ 330 ~ 660> 550".play
 
-// There is an alternate kind of pattern: character patterns.
+// There is an alternate kind of pattern: character patterns (using '' instead of "").
 // These represent each event with a single character.
 
 b.p(\a, deg'012 349 ')
@@ -132,7 +133,7 @@ b.p(\a, deg'abcCdejJ')
 b.p(\a, note'abcCdejJ')
 b.p(\a, mn'Hello There ')
 
-// You can provide bar divisions, usihng '|' or '/' characters.
+// You can provide bar divisions, using '|'.
 // The characters in a bar are spread evenly in time,
 // so if you have fewer notes they'll play slower to fit the bar.
 b.p(\a, mn'hi|bacalao|lovers')
@@ -151,8 +152,8 @@ b.p(\a, mn'5@hi|bacalao|lovers')
 
 // You can use variables to lookup your own custom char patterns.
 ~weird = (a: 200, b: 250, c: 300, d: 350, e: 400, f: 450);
-b.p(\a,       freq'ab dcb d/ab  cd  /de f c d') // using default freqs
-b.p(\a, freq~weird'ab dcb d/ab  cd  /de f c d') // using custom freqs
+b.p(\a,       freq'ab dcb d|ab  cd  |de f c d') // using default freqs
+b.p(\a, freq~weird'ab dcb d|ab  cd  |de f c d') // using custom freqs
 
 // You can modify the lookup while the pattern is running
 ~weird.d = 600
@@ -211,8 +212,13 @@ var notes = Pwrand([-4,-2,0,2,4,7], [1,2,3,2,1,0.5].normalizeSum, inf);
 )
 
 // There are some shortcut classes, for example Per() instead of Pexprand()
-// for exponentially-distributed random numbers, and Pr() instead of Pwhite()
-// for uniform random numbers.
+// for exponentially-distributed random numbers, Pr() instead of Pwhite()
+// for uniform random numbers, and Pr2() which returns values between +/-value.
+// These helpers also take a random seed, so you can get deterministic
+// "random" values.
+Bake(Per(0.01,1, 1234, 8).round(0.01)) // exponential random from 0.1 to 1 (with seed)
+Bake(Pr(0.5,1, 1357, 8).round(0.01)) // uniform random from 0.5 to 1 (with seed)
+Bake(Pr2(0.5, nil, 8).round(0.01)) // uniform random bewteen -0.5 and 0.5, different each time)
 
 //////////////////////////////////////////////////////////////////////
 // Bacalao patterns (loops)
@@ -238,25 +244,29 @@ b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~" <> leg"Pexprand(0.2,1)" <> ins
 // such as "degrading" it (replacing Events by Rests by a random fraction).
 b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~".degrade(0.75) <> leg"0.3" <> oct"Pwhite(4,5)" <> inst"\ping")
 
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2" << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".degrade << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".perfectShuffle << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".scramble << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rand << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".reverse << inst"\ping")
-b.p(\melody, deg"0 1 2 3".mirror << inst"\ping")
-b.p(\melody, deg"0 1 2 3".mirror1 << inst"\ping")
-b.p(\melody, deg"0 1 2 3".mirror2 << inst"\ping")
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(2) << inst"\ping", 1)
-b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(-3) << inst"\ping", 1)
-b.p(\melody, deg"[0 4 5 6 7@4]".pyramid << inst"\ping")
-b.p(\melody, deg"[0 4 5 6 7@4]".pyramid(9) << inst"\ping")
-b.p(\melody, deg"[0 4 5 6 7@4]".permute(2) << inst"\ping")
-b.p(\melody, deg"[0 4 5 6 7@4]".permute(3) << inst"\ping")
+// We can set a default value for the \melody track,
+// so we don't have to keep adding the inst"\ping"
+b.defSet(\melody, (instrument: \ping))
+
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2")
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".degrade)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".perfectShuffle)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".scramble)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rand)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".reverse)
+b.p(\melody, deg"0 1 2 3".mirror)
+b.p(\melody, deg"0 1 2 3".mirror1)
+b.p(\melody, deg"0 1 2 3".mirror2)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(2), 1)
+b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".rotate(-3), 1)
+b.p(\melody, deg"[0 4 5 6 7@4]".pyramid)
+b.p(\melody, deg"[0 4 5 6 7@4]".pyramid(9))
+b.p(\melody, deg"[0 4 5 6 7@4]".permute(2))
+b.p(\melody, deg"[0 4 5 6 7@4]".permute(3))
 
 // Instead of looping, you may also play a pattern through just once:
-b.once(\melody, deg"5 2 4 -1 0 6 4 ~" <> leg"Pexprand(0.2,1)" <> inst"\ping")
-b.once(\melody, deg"-1 5 4 4 0 2 ~ 6" <> leg"Pexprand(0.2,1)" <> oct"4" <> inst"\ping")
+b.once(\melody, deg"5 2 4 -1 0 6 4 ~" <> leg"Pexprand(0.2,1)")
+b.once(\melody, deg"-1 5 4 4 0 2 ~ 6" <> leg"Pexprand(0.2,1)" <> oct"4")
 
 // The cycle duration of a looping pattern will be calculated if possible.
 // However, you may specify a specific duration, which may either truncate
@@ -266,13 +276,13 @@ b.p(\melody, deg"[0 1 2 3]", 3) // extending it to three bars (one plus two of s
 
 // The following pattern "should" last five bars, but here we
 // truncate it to just two...
-b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]" <> inst"\ping") // full pattern of five bars
-b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]" <> inst"\ping", 2) // truncated to two bars
-b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]" <> inst"\ping", 2.625) // truncated to 2.625 bars (why not; nice for syncopation!)
+b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]") // full pattern of five bars
+b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]", 2) // truncated to two bars
+b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]", 2.625) // truncated to 2.625 bars (why not; nice for syncopation!)
 
 // Remember you can extend pattern durations using the @ notation
 (
-b.p(\melody, deg"[0 1 2 3 4 5 6 7]@1.9" <> pan"-0.7" <> inst"\ping");
+b.p(\melody, deg"[0 1 2 3 4 5 6 7]@1.9" <> pan"-0.7");
 b.p(\melody2, deg"[0 1 2 3 4 5 6 7]@2" <> pan"0.7" <> inst"\ping");
 )
 
@@ -281,21 +291,21 @@ b.p(\melody2, deg"[0 1 2 3 4 5 6 7]@2" <> pan"0.7" <> inst"\ping");
 // to specify the source index. (No Association means set the '0' source
 // and remove all other sources.)
 b.clear(\melody2);
-b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"-0.7" << inst"\ping" << lag"0/8" << leg"0.25", 2);
-b.p(\melody -> 1, deg"[0 1 2 3 4 5 6 7]@2".degrade(0.75) << pan"0.7" << inst"\ping" << lag"1/8" << leg"0.25", 2);
+b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"-0.7" << lag"0/8" << leg"0.25", 2);
+b.p(\melody -> 1, deg"[0 1 2 3 4 5 6 7]@2".degrade(0.75) << pan"0.7" << lag"1/8" << leg"0.25", 2);
 
-// IF you want to redefine the original without stopping the '1' slot, use explicity index '0'
-b.p(\melody -> 0, deg"[3 1 0 6 7 5 4 2]@2" << pan"-0.7" << inst"\ping", 2);
-b.p(\melody -> 1, deg"[3 0 7 4]@2" << oct"3" << pan"0.7" << inst"\ping", 2);
+// If you want to redefine the original without stopping the '1' slot, use index '0' explicity
+b.p(\melody -> 0, deg"[3 1 0 6 7 5 4 2]@2" << pan"-0.7", 2);
+b.p(\melody -> 1, deg"[3 0 7 4]@2" << oct"3" << pan"0.7", 2);
 
 // Besides the Bjorklund pattern notation "*(k,n,o)" or "!(k,n,o)",
 // there is also a way to use Bjorklund patterns to produce masking effects:
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping")
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping" << mask"Pbjork(5,8)")
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7")
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << mask"Pbjork(5,8)")
 // mask"Pbjork(...)" can be replaced by PmaskBjork(...) -- longer, but with auto-completion
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << inst"\ping" << PmaskBjork(3,8,1))
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(5,16)" << inst"\ping")
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << PmaskBjork(7,16) << inst"\ping")
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << PmaskBjork(3,8,1))
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(5,16)")
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << PmaskBjork(7,16))
 
 // You can adjust the volume of a pattern:
 b.db(\melody, -6)
@@ -380,7 +390,7 @@ b.vst(\piano).editor
 // save a preset for quick loading in future:
 b.vst(\piano).savePreset("piano")
 // b.vst(\piano) gives you access to the VSTPluginController object:
-HelpBrowser.openHelpFor("VSTPluginController")
+VSTPluginController.help // or HelpBrowser.openHelpFor("VSTPluginController")
 
 // In future, you can directly load it like this:
 b.vstInit(\piano, "FM8", "piano")

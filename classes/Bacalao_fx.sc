@@ -111,6 +111,7 @@
 			var sep = \delWobble.kr(delWobble, 0.1);
 			var delayTime = (\delTime.kr(delBeats/this.tempo, 1) - ControlDur.ir).max(0);
 			var fb = \delFb.kr(delFb, 0.1);
+			var noise = \delNoise.kr(noiseLevel, 0.1);
 			var delHpf = \delHpf.kr(400, 0.1);
 			var delLpf = \delLpf.kr(5000, 0.1);
 

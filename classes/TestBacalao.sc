@@ -132,6 +132,13 @@ TestBacalao : UnitTest {
 			'dur', 0.125,
 			'amp', Pseq([0.9, 0.4, 0, 0.4, 0.1, 0.3, 0.7, 0.7], 1));
 		this.compareEvents(this.prPat(str), expected, 9, "char patterns");
+
+		str = "deg\"[1 2 3]@2 |4 5| 6*3\"";
+		expected = Pbind('degree', Pseq([ 1, 2, 3, 4, 5, 6, 6, 6 ], 1),
+			'dur', Pseq([ 2/3, 2/3, 2/3, 1/2, 1/2, 1/3, 1/3, 1/3 ], 1));
+		this.compareEvents(this.prPat(str), expected, 9, "bar dividers");
+		str = "deg\"[[1 2 3]@2 [4 5] 6*3]@4\"";
+		this.compareEvents(this.prPat(str), expected, 9, "equivalent without bar dividers");
 	}
 
 	test_parserVariables {
@@ -286,7 +293,7 @@ TestBacalao : UnitTest {
 			nil
 		]);
 
-		this.prParseAndCompareEvents("char pattern", "@~varied'8@ab_cd/a_ b_/d'", [
+		this.prParseAndCompareEvents("char pattern", "@~varied'8@ab_cd|a_ b_|d'", [
 			~varied.a.copy.dur = 0.125,
 			~varied.b.copy.dur = 0.25,
 			~varied.c.copy.dur = 0.125,
@@ -560,7 +567,7 @@ TestBacalao : UnitTest {
 			[ [ -1, 0.25 ], [ -1/3, 0.25 ], [ 1/3, 0.25 ], [ 1, 0.25 ] ],
 			"pan pattern with digits");
 
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "01/234")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "01|234")),
 			[ [ 0, 1/2 ], [ 1, 1/2 ], [ 2, 1/3 ], [ 3, 1/3 ], [ 4, 1/3 ] ],
 			"pattern with '/' bars");
 		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "abc|defg")),
@@ -572,23 +579,23 @@ TestBacalao : UnitTest {
 		this.assertEquals(parse.calculateDurations(parse.prParseCharArray('degree', "8@012345678")),
 			[ [ 0, 1/8 ], [ 1, 1/8 ], [ 2, 1/8 ], [ 3, 1/8 ], [ 4, 1/8 ], [ 5, 1/8 ], [ 6, 1/8 ], [ 7, 1/8 ], [ 8, 1/8 ], [ Rest(), 7/8 ] ],
 			"fixed events per bar");
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "5@3__278/12")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "5@3__278|12")),
 			[ [ 3, 3/5 ], [ 2, 1/5 ], [ 7, 1/5 ], [ 8, 1/5 ], [ Rest(), 4/5 ], [ 1, 1/5 ], [ 2, 1/5 ], [ Rest(), 3/5 ] ],
 			"fixed events per bar - multiple bars");
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "3@1___/27")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "3@1___|27")),
 			[ [ 1, 4/3 ], [ Rest(), 2/3 ], [ 2, 1/3 ], [ 7, 1/3 ], [ Rest(), 1/3 ] ],
 			"fixed events per bar - hold extending over bar boundary");
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "4@1234/8@56|3@3217")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "4@1234|8@56|3@3217")),
 			[ [ 1, 1/4 ], [ 2, 1/4 ], [ 3, 1/4 ], [ 4, 1/4 ], [ 5, 1/8 ], [ 6, 1/8 ], [ Rest(), 6/8 ], [ 3, 1/3 ] , [ 2, 1/3 ] , [ 1, 1/3 ] , [ 7, 1/3 ] , [ Rest(), 2/3 ] ],
 			"fixed events per bar - changing per bar");
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "4@123/0@56/43210")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "4@123|0@56|43210")),
 			[ [ 1, 1/4 ], [ 2, 1/4 ], [ 3, 1/4 ], [ Rest(), 1/4 ], [ 5, 1/2 ], [ 6, 1/2 ], [ 4, 1/5 ] , [ 3, 1/5 ] , [ 2, 1/5 ] , [ 1, 1/5 ] , [ 0, 1/5 ] ],
 			"fixed to variable events per bar");
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "123/56/8@43210")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "123|56|8@43210")),
 			[ [ 1, 1/3 ], [ 2, 1/3 ], [ 3, 1/3 ], [ 5, 1/2 ], [ 6, 1/2 ], [ 4, 1/8 ] , [ 3, 1/8 ] , [ 2, 1/8 ] , [ 1, 1/8 ] , [ 0, 1/8 ], [ Rest(), 3/8 ] ],
 			"variable to fixed events per bar");
 
-		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "123/56/8@43210")),
+		this.approxCompareDurations(parse.calculateDurations(parse.prParseCharArray('degree', "123|56|8@43210")),
 			[ [ 1, 1/3 ], [ 2, 1/3 ], [ 3, 1/3 ], [ 5, 1/2 ], [ 6, 1/2 ], [ 4, 1/8 ] , [ 3, 1/8 ] , [ 2, 1/8 ] , [ 1, 1/8 ] , [ 0, 1/8 ], [ Rest(), 3/8 ] ],
 			"variable to fixed events per bar");
 

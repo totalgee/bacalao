@@ -1060,6 +1060,7 @@ BacalaoParser {
 	classvar <reCharEventsPerBar;
 	classvar numberFloat;
 	const rest = "~";
+	const barSplitChar = $|;
 	classvar elemModifiers;
 	classvar balancedArray;
 	classvar <patternValueArg; // balancedArray or numberWithMods
@@ -1314,17 +1315,24 @@ BacalaoParser {
 
 			{
 				// var patternArray = this.splitSimplify(patternString.replace("~", this.prGetRestString(patternType)));
-				var patternArray = this.parseArray(patternString);
-				var elemsAndDurs = {
-					if (patternArray.size > 1) {
-						// "Wrapping top-level pattern array".postln;
-						patternArray = [ patternArray -> 1];
-					};
-					this.calculateDurations(patternArray);
-				}.value;
+				var elemsAndDurs = [];
+				var elems, durs, resolveChord;
+				// Support "|" as bar-split symbol. For example, the following two
+				// should be equivalent (but the first is easier to understand):
+				//   deg"[1 2 3]@2 | 4 5 | 6*3" (play 1,2,3 over two bars, 4,5 over 1 and 6,6,6 over 1)
+				//   deg"[[1 2 3]@2 [4 5] 6*3]@4" (same, but you need to figure out the total bars (4) yourself)
+				patternString.split(barSplitChar).do{ arg patternString;
+					elemsAndDurs = elemsAndDurs ++ {
+						var patternArray = this.parseArray(patternString);
+						if (patternArray.size > 1) {
+							// "Wrapping top-level pattern array".postln;
+							patternArray = [ patternArray -> 1];
+						};
+						this.calculateDurations(patternArray);
+					}.value;
+				};
 				// Replace alphabetic-only strings by Symbol notation: 'symbol'
 				// patternArray = patternArray.collect{ |p| "^[A-Za-z]+$".matchRegexp(p).if(p.asSymbol.cs, p) };
-				var elems, durs, resolveChord;
 				#elems, durs = elemsAndDurs.flop;
 
 				// Replace Bacalao parser variables with their values, unless we're
@@ -1504,8 +1512,8 @@ BacalaoParser {
 	}
 
 	*prParseCharArray { arg patternType, patternString, optVariableName;
-		// Support $/ or $| as bar-split symbols
-		var bars = patternString.split($/).collect(_.split($|)).flatten;
+		// Support $| as bar-split symbol
+		var bars = patternString.split(barSplitChar);
 		var eventsPerBar = nil; // if set to a number, use that fixed number of events per bar
 		bars = bars.collect{ arg barString;
 			var patternArray;
