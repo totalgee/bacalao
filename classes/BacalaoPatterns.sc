@@ -187,7 +187,7 @@ PnsymRest : Psym {
 	// returns arrays of values/Events when it gets
 	// a collection for lookup.
 	getPattern { arg key;
-		^if(key.isSequenceableCollection) {
+		^if(key.isSequenceableCollection and: { key.isString.not }) {
 			key.collect {|each|
 				this.lookUp(each)
 			}

@@ -69,6 +69,74 @@ Bacalao {
 			this.setDictChars(pan, $0, $9, _.linlin(0,9, -1,1));
 			Bacalao.varSet('pan', pan);
 		}.value;
+
+		{
+			// ~kb variable is a QWERTY MIDI keyboard
+			var kb = ();
+			// Window().front.view.keyDownAction_{ arg view, char, modifiers, unicode, keycode, key;
+			// 	char.debug("char");
+			// 	modifiers.debug("modifiers");
+			// 	unicode.debug("unicode");
+			// 	keycode.debug("keycode");
+			// 	key.debug("key");
+			// }
+			// Bottom row
+			"zsxdcvgbhnjm".do{ arg ch, i;
+				kb.put(ch.toUpper.asSymbol, i + 36);
+				kb.put(ch.asSymbol, i + 48);
+			};
+			"q2w3er5t6y7ui9o0p".do{ arg ch, i;
+				kb.put(ch.toUpper.asSymbol, i + 72);
+				kb.put(ch.asSymbol, i + 60);
+			};
+			// The following will be keyboard-layout dependent
+			kb.put('@', 73); // modified 2 ('@' us-en)
+			kb.put('#', 75); // modified 3 ('#' us-en)
+			kb.put('%', 78); // modified 5 ('%' us-en)
+			kb.put('&', 80); // modified 6 ('^' us-en)
+			kb.put('/', 82); // modified 7 ('&' us-en)
+			kb.put(')', 85); // modified 9 ('(' us-en)
+			kb.put('=', 87); // modified 0 (')' us-en)
+			Bacalao.varSet('kb', kb);
+		}.value;
+
+		{
+			// ~batt variable is set up for Battery 4
+			//  (array of 4x4 notes starting at MIDI 36, with octave arrays)
+			var batt = ();
+			"1234qwerasdfzxcv".do{ arg ch, i;
+				batt.put(ch.asSymbol, i + 36 + ((0..5)*12));
+			};
+			// Also support columns 5-12 with octave arrays (rows via :index)
+			(5..12).do{ arg val;
+				batt.put(val.asSymbol, val + 35 + ((0..5)*12));
+			};
+			Bacalao.varSet('batt', batt);
+		}.value;
+
+		{
+			// ~bat4 variable is set up for Battery 4
+			//  (array of 4 rows (a-d) of 4 notes starting at MIDI 36)
+			var bat4 = ();
+			"abcd".do{ arg ch, row;
+				(1..4).do { arg col;
+					bat4.put((ch ++ col).asSymbol, 36 + (4 * row) + col - 1)
+				}
+			};
+			Bacalao.varSet('bat4', bat4);
+		}.value;
+
+		{
+			// ~bat12 variable is set up for Battery 4
+			//  (array of 6 rows (a-f) of 12 notes starting at MIDI 36)
+			var bat12 = ();
+			"abcdef".do{ arg ch, row;
+				(1..12).do { arg col;
+					bat12.put((ch ++ col).asSymbol, 36 + (12 * row) + col - 1)
+				}
+			};
+			Bacalao.varSet('bat12', bat12);
+		}.value;
 	}
 
 	*setDictChars { arg dict, start = $a, end = $z, remapFunc = { arg i, size; i.lincurve(0,size-1, 0, 1, 4) };
@@ -426,12 +494,46 @@ Bacalao {
 	// Durations > 0 will truncate or extend the pattern as needed to produce
 	// exactly the requested duration. By default (if quant is unspecified) the
 	// quantization will be a multiple of the duration ([dur, 0]).
-	p { arg trkName, pattern, dur=0, quant, role;
+	// When duration is unspecified (nil), we attempt to determine the total duration
+	// of the pattern passed in.
+	// @todo We might want a way to fast-forward when playing a pattern with
+	// long duration, see:
+	//   https://sc-users.bham.ac.narkive.com/IUvoCSGV/fast-forwarding-a-pattern
+	p { arg trkName, pattern, dur, quant, role;
 		var slot;
 		if (trkName.isKindOf(Association)) {
 			#trkName, slot = [trkName.key, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
+			if (dur.isNil) {
+				try {
+					// Try to find a Pbind (or Pmono) somewhere up the chain,
+					// so we can get its duration key. We can't "solve" for all kinds
+					// of patterns -- in which case we just use the default dur of 0,
+					// which is fine (will use the "natural" duration, and quantize to
+					// the next bar instead of the full pattern duration).
+					var eventPat = pattern;
+					var durSeq;
+					while { eventPat.respondsTo(\patternpairs).not } {
+						case
+						{ eventPat.respondsTo(\pattern) } {
+							// e.g. FilterPattern
+							eventPat = eventPat.pattern
+						}
+						{ eventPat.respondsTo(\patterns) } {
+							// e.g. PtimeChain
+							eventPat = eventPat.patterns.first
+						}
+						{ Error("Don't know how to find a Pbind/Pmono from here").throw }
+					};
+					durSeq = eventPat.patternpairs.clump(2).detect{|x| x.first == \dur}[1];
+					dur = durSeq.list.sum * durSeq.repeats;
+					//dur.debug("computed bars");
+				} { arg error;
+					error.errorString.warn;
+					dur = 0; // use "natural" duration
+				}
+			};
 			this.prChangePattern(trkName.asSymbol, slot, pattern, dur, quant, role);
 		} {
 			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
@@ -1214,7 +1316,10 @@ BacalaoParser {
 				// that will be substituted later.
 				elem
 			} {
-				elem.asSymbol.cs
+				// We return these as Strings rather than Symbols, because
+				// otherwise the ChordSymbol class can mess things up when
+				// it embeds Symbols (when using variable lookup in PnSymRest).
+				elem.asString.cs
 			}
 		}
 	}

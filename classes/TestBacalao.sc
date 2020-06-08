@@ -722,6 +722,31 @@ TestBacalao : UnitTest {
 				expected.size, #[\degree, \dur, \beat, \amp]);
 			this.assertEquals(events, expected, "time chaining");
 		}.value;
+
+		{
+			var expected = [
+				(midinote: 36, dur: 0.25, beat: 0.0),
+				(midinote: 47, dur: 0.25, beat: 1.0),
+				(midinote: 49, dur: 0.25, beat: 2.0),
+				(midinote: [63, 51], dur: 0.25, beat: 3.0),
+				(midinote: 36, dur: 0.25, beat: 0.0),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				this.prPat("mn~batt\"1 12 2:1 <4:2,v>\""),
+				expected.size, #[\midinote, \dur, \beat]);
+			this.assertEquals(events, expected, "~batt variable lookup");
+
+			events = this.prPlayAndGetEvents(b,
+				this.prPat("mn~bat12\"a1 a12 b2 <c4,b4>\""),
+				expected.size, #[\midinote, \dur, \beat]);
+			this.assertEquals(events, expected, "~bat12 variable lookup");
+
+			expected[3].midinote = [39, 51];
+			events = this.prPlayAndGetEvents(b,
+				this.prPat("mn~bat4\"a1 c4 d2 <a4,d4>\""),
+				expected.size, #[\midinote, \dur, \beat]);
+			this.assertEquals(events, expected, "~bat4 variable lookup");
+		}.value;
 	}
 
 }
