@@ -747,6 +747,31 @@ TestBacalao : UnitTest {
 				expected.size, #[\midinote, \dur, \beat]);
 			this.assertEquals(events, expected, "~bat4 variable lookup");
 		}.value;
+
+		if (\ChordSymbol.asClass.notNil) {
+			var expected = [
+				(degree: 0, dur: 0.25, beat: 0.0),
+				(degree: 0, dur: 0.25, beat: 1.0),
+				(degree: [6, 7, 9, 11], dur: 0.5, beat: 2.0),
+				(degree: 0, dur: 0.25, beat: 0.0),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				this.prPat("deg\"C*2 CM7_a\""),
+				expected.size, #[\degree, \dur, \beat]);
+			this.assertEquals(events, expected, "ChordSymbol lookup degree");
+
+			expected = [
+				(midinote: 60, dur: 0.25, beat: 0.0),
+				(midinote: 60, dur: 0.25, beat: 1.0),
+				(midinote: [71, 72, 76, 79], dur: 0.5, beat: 2.0),
+				(midinote: 60, dur: 0.25, beat: 0.0),
+			];
+			events = this.prPlayAndGetEvents(b,
+				this.prPat("mn\"C4*2 C4M7_a4\""),
+				expected.size, #[\midinote, \dur, \beat]);
+			this.assertEquals(events, expected, "ChordSymbol lookup midinote");
+		};
+
 	}
 
 }

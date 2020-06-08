@@ -36,17 +36,23 @@ Bacalao {
 	}
 
 	*config {
-		var chords = (I: [0,2,4],
-			ii: [1,3,5],
-			iii: [2,4,6],
-			IV: [3,5,7],
-			V: [4,6,8],
-			vi: [5,7,9],
-			viio: [6,8,10]
-		);
-		chords.keysValuesDo{ arg k, v;
-			Bacalao.varSet(k, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[-7,0,0]]);
-		};
+		{
+			var baseChords = (
+				i: [0,2,4].rotate(-2),     // I (major)
+				ii: [1,3,5],    // ii (minor)
+				iii: [2,4,6],   // iii (minor)
+				iv: [3,5,7],    // IV (major)
+				v: [4,6,8],   // V (major)
+				vi: [5,7,9]-7,  // vi (minor)
+				vii: [6,8,10]-7 // viio (diminished)
+			);
+			var chords = ();
+			baseChords.keysValuesDo{ arg k, v;
+				chords.put(k, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[0,7,7]]);
+				chords.put(k.asString.toUpper.asSymbol, [v, v.rotate(-1)+[0,0,7], v.rotate(-2)+[0,7,7]] - 7);
+			};
+			Bacalao.varSet('chords', chords);
+		}.value;
 
 		{
 			var freq = ();
@@ -136,6 +142,24 @@ Bacalao {
 				}
 			};
 			Bacalao.varSet('bat12', bat12);
+		}.value;
+
+		{
+			// ~mn variable is set up for named notes
+			if (\ChordSymbol.asClass.notNil) {
+				var mn = ();
+				"cdefgab".do{ arg note;
+					(0..8).do{ arg oct;
+						var sym = (note ++ oct).asSymbol;
+						mn.put(sym, sym.asNote);
+						sym = (note ++ "b" ++ oct).asSymbol;
+						mn.put(sym, sym.asNote);
+						sym = (note ++ "s" ++ oct).asSymbol;
+						mn.put(sym, sym.asNote);
+					}
+				};
+				Bacalao.varSet('mn', mn);
+			}
 		}.value;
 	}
 
@@ -1266,17 +1290,22 @@ BacalaoParser {
 			if (\ChordSymbol.asClass.notNil and: { elem.first.isUpper }) {
 				switch (patternType)
 				{ \degree } {
-					var notes = ChordSymbol.asNotes(elem);
-					if (notes != elem) {
-						notes.asArray.collect { |n|
+					var notes = elem.asSymbol.asNoteOrChord;
+					if (notes != elem.asSymbol) {
+						var degs = notes.asArray.collect { |n|
 							// TODO when next version of SC comes out use keyToDegree
-							n.keyToDegree2(Scale.major, 12);
-						} //.debug("ChordSymbol")
+							var deg = n.keyToDegree2(Scale.major, 12);
+							if (deg == deg.round) { deg.asInteger } { deg }
+						}; //.debug("ChordSymbol")
+						if (degs.size > 1) { degs } { degs.first }
 					} {
 						elem
 					}
 				}
-				{ ChordSymbol.asNotes(elem) } //.debug("ChordSymbol") };
+				{
+					var notes = elem.asSymbol.asNoteOrChord;
+					if (notes.size > 1) { notes } { notes.first }
+				} //.debug("ChordSymbol") };
 			} {
 				// Stick with the original element, there is no lookup
 				elem
