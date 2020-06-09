@@ -2107,30 +2107,30 @@ PmaskBjork {
 }
 
 Psine {
-	*new { arg period=1, phase=0, mul=1, add=0, repeats=inf;
-		^((Ptime(repeats) / period + phase) * 2pi).sin * mul + add;
+	*new { arg periodBars=1, phase=0, mul=1, add=0, repeats=inf;
+		^((Ptime(repeats) / Pfunc{thisThread.clock.beatsPerBar} / periodBars + phase) * 2pi).sin * mul + add;
 	}
 
-	*range { arg period=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
-		^Psine.new(period, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
+	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
+		^Psine.new(periodBars, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
 	}
 
-	*exprange { arg period=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
-		^Psine.new(period, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
+	*exprange { arg periodBars=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
+		^Psine.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
 	}
 }
 
 Psaw {
-	*new { arg period=1, phase=0, mul=1, add=0, repeats=inf;
-		^((Ptime() + phase).mod(period) / period * 2 - 1) * mul + add;
+	*new { arg periodBars=1, phase=0, mul=1, add=0, repeats=inf;
+		^((Ptime() / Pfunc{thisThread.clock.beatsPerBar} + phase).mod(periodBars) / periodBars * 2 - 1) * mul + add;
 	}
 
-	*range { arg period=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
-		^Psaw.new(period, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
+	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
+		^Psaw.new(periodBars, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
 	}
 
-	*exprange { arg period=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
-		^Psaw.new(period, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
+	*exprange { arg periodBars=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
+		^Psaw.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
 	}
 }
 
@@ -2162,15 +2162,6 @@ Per {
 	*new { arg lo = 0.0001, hi = 1.0, randSeed, length = inf;
 		var p = Pexprand(lo, hi, length);
 		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p };
-	}
-}
-
-
-// Modify an Event Pattern to return Rests based on a weighted coin toss
-+Pattern {
-	degrade { arg prob = 0.5, randSeed;
-		var p = this.collect{ |ev| prob.coin.if{ ev } { ev.copy.put(\mask, Rest(0)) }};
-		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p }
 	}
 }
 

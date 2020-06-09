@@ -9,7 +9,7 @@ Bacalao is a live coding "domain specific language". You can use
 Bacalao's shortened notation to quickly experiment with Node- and
 especially Pattern-proxies (which it uses under the covers).
 
-image::Atlantic_cod.jpg#Transatlantic Live Cod(e)::
+image::BacalaoLogo.png#Transatlantic Live Cod(e)::
 
 Bacalao was inspired by
 link::https://tidalcycles.org/##TidalCycles::, and adopts a similar

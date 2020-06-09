@@ -317,6 +317,52 @@ Psync2 : FilterPattern {
 		};
 		^Parrop(this, _.permute(nthPermutation), dur);
 	}
+
+	fast { arg rate = 2;
+		^Pmul(\stretch, rate.reciprocal, this);
+	}
+
+	slow { arg rate = 2;
+		^Pmul(\stretch, rate, this);
+	}
+
+	// Modify an Event Pattern to return Rests based on a weighted coin toss
+	degrade { arg prob = 0.5, randSeed;
+		var p = this.collect{ |ev| prob.coin.if{ ev } { ev.copy.put(\mask, Rest(0)) }};
+		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p }
+	}
+
+	// Apply a function (or a replacement pattern) once every N bars
+	// You can use an Association "every(4->1, ...)" to offset the bar from 0.
+	every { arg nBars, funcOrAlternatePattern;
+		var alternate = if (funcOrAlternatePattern.isKindOf(Function)) {
+			funcOrAlternatePattern.(this)
+		} {
+			funcOrAlternatePattern
+		};
+		var offset = 0;
+		if (nBars.isKindOf(Association)) {
+			#nBars, offset = [nBars.key, nBars.value];
+		};
+		^Pswitch([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars == 0 })
+	}
+
+	// Apply a function (or a replacement pattern) every N bars when the
+	// modulo is more than "startBar".
+	// You can use an Association "whenmod(8->2, 6, ...)" to offset where it applies.
+	whenmod { arg nBars, startBar, funcOrAlternatePattern;
+		var alternate = if (funcOrAlternatePattern.isKindOf(Function)) {
+			funcOrAlternatePattern.(this)
+		} {
+			funcOrAlternatePattern
+		};
+		var offset = 0;
+		if (nBars.isKindOf(Association)) {
+			#nBars, offset = [nBars.key, nBars.value];
+		};
+		^Pswitch([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars >= startBar })
+	}
+
 }
 
 // This overload should be removed (replaced by regular prNext) once the

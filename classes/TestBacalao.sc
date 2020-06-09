@@ -651,7 +651,7 @@ TestBacalao : UnitTest {
 		this.compareEvents(this.prPat(str), expected, 9, "Bjorklund masking 2");
 	}
 
-	prPlayAndGetEvents { arg bacalao, pattern, numDesiredEvents = 4, desiredKeys = #[\degree, \dur, \beat], maxTime = 2.0;
+	prPlayAndGetEvents { arg bacalao, pattern, numDesiredEvents = 4, desiredKeys = #[\degree, \dur, \beat], maxTime = 2.0, quant;
 		var events = [];
 		var finishFunc = Pfunc{ |ev|
 			// We set e.parent_(nil) so we lose the extra stuff fromm Event.default and
@@ -668,7 +668,7 @@ TestBacalao : UnitTest {
 		};
 		Ndef.clear;
 		Pdef.clear;
-		bacalao.p(\test, Pbind(\beat, Ptime(), \finish, finishFunc) <> pattern);
+		bacalao.p(\test, Pbind(\beat, Ptime(), \finish, finishFunc) <> pattern, quant: quant);
 		this.wait({ events.size >= numDesiredEvents }, "waiting for all Events", maxTime);
 
 		// Not sure why the Pfunc adds extra events after the end, so
@@ -771,6 +771,69 @@ TestBacalao : UnitTest {
 				expected.size, #[\midinote, \dur, \beat]);
 			this.assertEquals(events, expected, "ChordSymbol lookup midinote");
 		};
+
+		// Test every and whenmod, which must be played
+		{
+			var expected = [
+				(degree: 0, dur: 0.25, beat: 0.0),
+				(degree: 1, dur: 0.25, beat: 1.0),
+				(degree: 2, dur: 0.25, beat: 2.0),
+				(degree: 3, dur: 0.25, beat: 3.0),
+				(degree: 0, dur: 0.25, beat: 4.0),
+				(degree: 1, dur: 0.25, beat: 5.0),
+				(degree: 2, dur: 0.25, beat: 6.0),
+				(degree: 3, dur: 0.25, beat: 7.0),
+				(degree: 0, dur: 0.25, beat: 8.0),
+				(degree: 1, dur: 0.25, beat: 9.0),
+				(degree: 2, dur: 0.25, beat: 10.0),
+				(degree: 3, dur: 0.25, beat: 11.0),
+				(degree: 3, dur: 0.25, beat: 12.0),
+				(degree: 2, dur: 0.25, beat: 13.0),
+				(degree: 1, dur: 0.25, beat: 14.0),
+				(degree: 0, dur: 0.25, beat: 15.0),
+				(degree: 0, dur: 0.25, beat: 16.0),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				this.prPat("deg\"0 1 2 3\"").every(4->3, _.reverse),
+				expected.size, #[\degree, \dur, \beat], quant: 4);
+			this.assertEquals(events, expected, "every - function");
+
+			expected = [
+				(degree: 0, dur: 0.5, beat: 0.0), // bar 0
+				(degree: 2, dur: 0.25, beat: 2.0),
+				(degree: 3, dur: 0.25, beat: 3.0),
+
+				(degree: 0, dur: 0.5, beat: 4.0), // bar 1
+				(degree: 2, dur: 0.25, beat: 6.0),
+				(degree: 3, dur: 0.25, beat: 7.0),
+
+				(degree: 0, dur: 0.5, beat: 8.0), // bar 2
+				(degree: 2, dur: 0.25, beat: 10.0),
+				(degree: 3, dur: 0.25, beat: 11.0),
+
+				(degree: 3, dur: 0.25, beat: 12.0), // bar 3
+				(degree: 2, dur: 0.25, beat: 12.5),
+				(degree: 0, dur: 0.5, beat: 13.0),
+				(degree: 3, dur: 0.25, beat: 14.0),
+				(degree: 2, dur: 0.25, beat: 14.5),
+				(degree: 0, dur: 0.5, beat: 15.0),
+
+				(degree: 3, dur: 0.25, beat: 16.0), // bar 4
+				(degree: 2, dur: 0.25, beat: 16.5),
+				(degree: 0, dur: 0.5, beat: 17.0),
+				(degree: 3, dur: 0.25, beat: 18.0),
+				(degree: 2, dur: 0.25, beat: 18.5),
+				(degree: 0, dur: 0.5, beat: 19.0),
+
+				(degree: 0, dur: 0.5, beat: 20.0), // bar 0 restarts
+			];
+			// (Need to add the stretch key, because we don't use Event.default
+			// in prPlayAndGetEvents, so it's not defined for _.fast to be applied)
+			events = this.prPlayAndGetEvents(b,
+				(this.prPat("deg\"0 [2 3]\"") <> (stretch:1)).whenmod(5, 3, _.reverse <> _.fast),
+				expected.size, #[\degree, \dur, \beat], quant: 5);
+			this.assertEquals(events, expected, "whenmod - function");
+		}.value;
 
 	}
 

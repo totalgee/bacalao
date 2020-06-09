@@ -1,7 +1,7 @@
 # Bacalao
 Somewhat fishy live cod(e) extensions to SuperCollider.
 
-![Image of Atlantic cod (Bacalao in Spanish)](HelpSource/Classes/Atlantic_cod.jpg?raw=true)
+![Image of Atlantic cod (Bacalao in Spanish)](HelpSource/Classes/BacalaoLogo.png?raw=true)
 ([ref](https://commons.wikimedia.org/wiki/File:Atlantic_cod.jpg))
 
 ## What is it?
@@ -37,6 +37,9 @@ it's better to go through the [Bacalao_examples](Bacalao_examples.scd)
 file, reading the comments and executing the code line by line. Even
 there, however, not everything is documented yet.
 
+There is also a cheatsheet ([part 1](Bacalao_cheatsheet_1.pdf),
+[part 2](Bacalao_cheatsheet_2.pdf)).
+
 There are a series of unit tests that should run successfully, so if
 you're brave you can also look in those files for ideas or inspiration.
 
@@ -46,7 +49,7 @@ playground, so it will evolve and change according to his whims, but
 it may still be interesting or useful to others. It makes no promises
 to be backward (or forward, or sideways) compatible. It's a set of
 tools for making music on the fly, so -- swim free, live in the moment,
-and let old code be old code.
+and let old code... be old code.
 
 ## Etymology
 Bacalao (the Spanish word for
@@ -56,7 +59,9 @@ better: it's "live coding" compressed by nearly 75%)...and then
 translated into Spanish to make it sound exotic (and salty!).  In the
 translation process, unfortunately, it loses nearly all of those letter
 savings. (This may or may not be a metaphor for the gains and
-losses you experience using the language itself...)
+losses you experience using the language itself...) *Bacalao*
+also uses two-thirds of the letters of *Barcelona*, which is where
+it was spawned and hatched.
 
 Bacalao (or Bakalao, Vacalao, or one of numerous other spellings) also
 refers to a repetitive, aggressive
