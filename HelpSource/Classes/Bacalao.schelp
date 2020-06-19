@@ -64,6 +64,18 @@ Bakalao music was reaching its prime.  Fortunately, the
 emphasis::fish:: (at least) seem to be making a comeback...let's
 leave it at that.
 
+subsection:: Other Documentation
+
+This documentation page is quite incomplete at the moment. The best reference
+for now are the cheatsheets (strong::Bacalao_cheatsheet_1.pdf:: and
+strong::Bacalao_cheatsheet_2.pdf:: at the root directory of the Bacalao Quark),
+or the strong::Bacalao_examples.scd:: file (in the same location).
+
+code::
+// Open the folder where Bacalao is likely installed:
+Quarks.installedPaths.detect(_.contains("Bacalao")).openOS
+::
+
 subsection:: Example
 
 A quick cod(e) example, before jumping in:
@@ -71,9 +83,8 @@ A quick cod(e) example, before jumping in:
 code::
 (
 // Boot the Server and create our Bacalao instance to work with
-s.boot;
-b = Bacalao();
-b.tempo = 0.4;
+b = Bacalao().boot;
+b.tempo = 96/60;
 )
 
 // Get a simple loop going, using default SynthDef
@@ -88,11 +99,11 @@ b.p(\accompaniment, deg"[[0 2 4]*4]" << amp"0.05");
 // Modify (redefine) the accompaniment
 b.p(\accompaniment, deg"[~ [0 2 4]*4]" << amp"0.05");
 
-// Fade out the accompaniment over six beats (a bar and a half)
+// Fade out the accompaniment over six seconds
 b.clear(\accompaniment, 6);
 
-// Fade out all remaining tracks over eight beats (two bars)
-[\simple, \bass].do(b.clear(_, 8));
+// Fade out all remaining tracks over eight seconds
+b.clear(b.trks, 8);
 ::
 
 CLASSMETHODS::
@@ -173,21 +184,21 @@ s.waitForBoot {
     }).add;
     s.sync;
 
-	b = Bacalao();
-	b.tempo = 1; // set tempo to 120 bpm (2 beats per second)
+    b = Bacalao();
+    b.tempo = 120/60; // set tempo to 120 bpm (2 beats per second at 4 beats per bar)
     {
         // Use "wait" to simulate a live coder's command execution over time
 
         // play a scale repeatedly, with alternating amplitude accents per note
-		b.p(\syn, deg"[0 1 2 3 4 5 6 7]*2" << inst"\saw" << amp"[0.12 0.06]" << slow"4");
-        8.wait;
+        b.p(\syn, deg"[0 1 2 3 4 5 6 7]*2" << inst"\saw" << amp"[0.12 0.06]");
+        16.wait;
         // bassline using repeat, rest with hold and sub-phrase
-		b.p(\bass, deg"[-14*3 ~@3 [-8 ~ -7]]" << inst"\saw" << pan"[-0.9 0.9 0]" << amp"0.3" << slow"4");
-        8.wait;
-		b.tempo = 1.5.debug("tempo"); // set tempo to 90 bpm (1.5 beats per second)
-        8.wait;
-		[\syn, \bass].do(b.clear(_, 5)); // fade out all tracks over 5 seconds
-	}.fork(b.clock);
+        b.p(\bass, deg"[-14*3 ~@3 [-8 ~ -7]]" << inst"\saw" << pan"[-0.9 0.9]" << amp"0.3");
+        16.wait;
+        b.tempo = 1.5.debug("tempo"); // set tempo to 90 bpm (1.5 beats per second)
+        16.wait;
+        b.clear(b.trks, 5); // fade out all tracks over 5 seconds
+    }.fork(b.clock);
 }
 )
 ::

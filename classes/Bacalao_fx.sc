@@ -15,6 +15,18 @@
 		indices = indices ?? { proxy.objects.indices };
 		indices.do{ arg index;
 			var obj = proxy.objects[index];
+			var wetKey = ("wet" ++ index).asSymbol;
+			var wet = proxy.nodeMap[wetKey];
+			var showValues = { arg c;
+				if (showKey.value(c.name)) {
+					// value is the curent node map value, or else the default if it's not set
+					var value = proxy.nodeMap[c.name];
+					var defaultValue = "(default: " ++ c.defaultValue ++ ")";
+					value = if (value.isNil) { defaultValue } { value + defaultValue };
+					"    % = %".format(c.name, value).postln
+				}
+			};
+
 			if (index == 0) {
 				proxy.nodeMap.keys.do{ arg k;
 					if (showKey.value(k)) {
@@ -23,18 +35,14 @@
 				}
 			};
 
-			"=== Slot % (%)".format(index, obj.class).postln;
-			if (obj.isKindOf(SynthDefControl)) {
-				proxy.objects[index].synthDef.allControlNames.do({arg c;
-					if (showKey.value(c.name)) {
-						// value is the curent node map value, or else the default if it's not set
-						var value = proxy.nodeMap[c.name];
-						var defaultValue = "(default: " ++ c.defaultValue ++ ")";
-						value = if (value.isNil) { defaultValue } { value + defaultValue };
-						"    % = %".format(c.name, value).postln
-					}
-				})
-			};
+			"=== Slot % (%)".format(index, if (wet.notNil) { "% = %".format(wetKey, wet) } { obj.class }).postln;
+			case
+			{ obj.isKindOf(SynthDefControl) } {
+				proxy.objects[index].synthDef.allControlNames.do(showValues);
+			}
+			{ obj.isKindOf(SynthControl) } {
+				proxy.objects[index].synthDesc.controls.do(showValues);
+			}
 		}
 	}
 
@@ -65,17 +73,19 @@
 
 	fxVerb { arg t60 = 1.0, damp = 0.2;
 		^{ arg in;
+			var verbPre = \verbPre.kr(1, 0.05);
 			t60 = \t60.kr(t60, 0.1);
 			damp = \damp.kr(damp, 0.1);
-			JPverb.ar(in, t60, damp)
+			JPverb.ar(in * verbPre, t60, damp)
 		}
 	}
 
 	fxVerbLite { arg t60 = 1.0, stereo = 0.5;
 		^{ arg in;
+			var verbPre = \verbPre.kr(1, 0.05);
 			t60 = \t60.kr(t60, 0.1);
 			stereo = \stereo.kr(stereo, 0.1);
-			NHHall.ar(in, t60, stereo)
+			NHHall.ar(in * verbPre, t60, stereo)
 		}
 	}
 
@@ -100,14 +110,16 @@
 
 	fxDelay { arg delayBeats = 1.5, decayBeats = 2.0;
 		^{ arg in;
+			var delayPre = \delayPre.kr(1, 0.05);
 			var delayTime = \delTime.kr(delayBeats/this.tempo, 1).max(0);
 			var decayTime = \delDecay.kr(decayBeats/this.tempo, 0.1);
-			CombL.ar(HPF.ar(in.reverse, 20), delayTime * 2, delayTime, decayTime)
+			CombL.ar(HPF.ar(in.reverse * delayPre, 20), delayTime * 2, delayTime, decayTime)
 		}
 	}
 
 	fxDelayDub { arg delBeats = 1.5, delFb = 0.5, delWobble = 0.002, noiseLevel = 0;
 		^{ arg in;
+			var delayPre = \delayPre.kr(1, 0.05);
 			var sep = \delWobble.kr(delWobble, 0.1);
 			var delayTime = (\delTime.kr(delBeats/this.tempo, 1) - ControlDur.ir).max(0);
 			var fb = \delFb.kr(delFb, 0.1);
@@ -119,7 +131,7 @@
 			var local = LocalIn.ar(numChans);
 			local = { arg sig;
 				var left, right;
-				sig = sig*fb + in;
+				sig = sig*fb + (in * delayPre);
 				if (noiseLevel > 0) {
 					sig = sig * LPF.ar(WhiteNoise.ar(noiseLevel!numChans, 1), 1200);
 				};
@@ -138,6 +150,7 @@
 
 	fxDelayPingPong { arg delBeats = 1.5, delFb = 0.5, delWobble = 0.002, noiseLevel = 0;
 		^{ arg in;
+			var delayPre = \delayPre.kr(1, 0.05);
 			var sep = \delWobble.kr(delWobble, 0.1);
 			var delayTime = \delTime.kr(delBeats/this.tempo, 1);
 			var fb = \delFb.kr(delFb, 0.1);
@@ -165,7 +178,7 @@
 			delayed[1] = DelayC.ar(delayed[1], 0.5, LFNoise2.ar(11).range(sep, 0));
 			LocalOut.ar(delayed);
 
-			BufWr.ar((Pan2.ar(in.sum * numChans.sqrt.reciprocal, 1) + feedbackChannels).rotate(1) <! delayed.asArray.first, buf, phase, 1);
+			BufWr.ar((Pan2.ar(in.sum * numChans.sqrt.reciprocal * delayPre, 1) + feedbackChannels).rotate(1) <! delayed.asArray.first, buf, phase, 1);
 			delayed
 		}
 	}

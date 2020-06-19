@@ -318,6 +318,10 @@ Psync2 : FilterPattern {
 		^Parrop(this, _.permute(nthPermutation), dur);
 	}
 
+	faststutter { arg rate = 2;
+		^this.fast(rate).stutter(rate);
+	}
+
 	fast { arg rate = 2;
 		^Pmul(\stretch, rate.reciprocal, this);
 	}
@@ -344,7 +348,11 @@ Psync2 : FilterPattern {
 		if (nBars.isKindOf(Association)) {
 			#nBars, offset = [nBars.key, nBars.value];
 		};
-		^Pswitch([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars == 0 })
+		^Pif(Pfunc{
+			thisThread.clock.bar - offset % nBars == 0
+		}, alternate, this);
+		// equivalent alternative
+		// ^Pswitch1([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars == 0 })
 	}
 
 	// Apply a function (or a replacement pattern) every N bars when the
@@ -360,7 +368,103 @@ Psync2 : FilterPattern {
 		if (nBars.isKindOf(Association)) {
 			#nBars, offset = [nBars.key, nBars.value];
 		};
-		^Pswitch([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars >= startBar })
+		^Pif(Pfunc{
+			// Using the clock this way doesn't work well when you start to have scramble or other Parrop operations
+
+			// Fractional bar version (buggy because nextBar is sometimes == this bar):
+			// var clk = thisThread.clock;
+			// var fractInBar = ((clk.beats.debug("beats") - clk.nextBar.debug("nextBar")) / clk.beatsPerBar) + 1;
+			// var bar = clk.bar.debug("bar") + fractInBar;
+			// (bar.debug("bar") - offset % nBars).debug("barModulo") >= startBar
+
+			// Integer bar version (better):
+			(thisThread.clock.bar - offset % nBars) >= startBar
+		}, alternate, this);
+		// equivalent alternative
+		// ^Pswitch1([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars >= startBar })
+	}
+
+	// This doesn't work the same way as TidalCycles' version...
+	// The patterns advance bit by bit, according to the coin
+	// toss, so they get out of sync.
+	// (but it's still fun to play with)
+	// Compare the behaviour of these two different examples:
+	// b.p(1, deg"0 1 2 3".repeat.rarely(_.add(\degree, 7)))
+	// b.p(1, deg"0 1 2 3".add(\degree, Pwrand([0, 7], [0.75, 0.25], inf)))
+	sometimesBy { arg prob, funcOrAlternatePattern;
+		var alternate = if (funcOrAlternatePattern.isKindOf(Function)) {
+			funcOrAlternatePattern.(this)
+		} {
+			funcOrAlternatePattern
+		};
+		^Pif( Pfunc{ prob.coin }, alternate, this);
+	}
+
+	always { arg funcOrAlternatePattern;
+		^this.sometimesBy(1, funcOrAlternatePattern);
+	}
+	almostAlways { arg funcOrAlternatePattern;
+		^this.sometimesBy(0.9, funcOrAlternatePattern);
+	}
+	often { arg funcOrAlternatePattern;
+		^this.sometimesBy(0.75, funcOrAlternatePattern);
+	}
+	sometimes { arg funcOrAlternatePattern;
+		^this.sometimesBy(0.5, funcOrAlternatePattern);
+	}
+	rarely { arg funcOrAlternatePattern;
+		^this.sometimesBy(0.25, funcOrAlternatePattern);
+	}
+	almostNever { arg funcOrAlternatePattern;
+		^this.sometimesBy(0.1, funcOrAlternatePattern);
+	}
+	never { arg funcOrAlternatePattern;
+		^this.sometimesBy(0, funcOrAlternatePattern);
+	}
+
+	set { arg keyName, value;
+		^Pset(keyName, value, this)
+	}
+
+	add { arg keyName, value;
+		^Padd(keyName, value, this);
+	}
+
+	mul { arg keyName, value;
+		^Pmul(keyName, value, this);
+	}
+
+	// Get (or try to estimate) a pattern's duration
+	getDur {
+		var dur;
+		try {
+			// Try to find a Pbind (or Pmono) somewhere up the chain,
+			// so we can get its duration key. We can't "solve" for all kinds
+			// of patterns -- in which case we just use the default dur of 0,
+			// which is fine (will use the "natural" duration, and quantize to
+			// the next bar instead of the full pattern duration).
+			var eventPat = this;
+			var durSeq;
+			while { eventPat.respondsTo(\patternpairs).not } {
+				case
+				{ eventPat.respondsTo(\pattern) } {
+					// e.g. FilterPattern
+					eventPat = eventPat.pattern
+				}
+				{ eventPat.respondsTo(\patterns) } {
+					// e.g. PtimeChain
+					eventPat = eventPat.patterns.first
+				}
+				{ Error("Don't know how to find a Pbind/Pmono from here").throw }
+			};
+			durSeq = eventPat.patternpairs.clump(2).detect{|x| x.first == \dur}[1];
+			dur = durSeq.list.sum * durSeq.repeats;
+			//dur.debug("computed bars");
+		} { arg error;
+			error.errorString.warn;
+			dur = 0; // use "natural" duration
+		};
+		^dur
 	}
 
 }

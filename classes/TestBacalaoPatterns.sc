@@ -266,4 +266,51 @@ TestBacalaoPatterns : UnitTest {
 		this.assertEquals(results, expected, "PnSafe avoids infinite loop");
 	}
 
+	test_modifiers {
+		var p = Pbind(\degree, Pseq((0..3), 2), \dur, 0.5).mul(\degree, 2).add(\dur, Pseq([0, 0.5], inf).stutter(3)).set(\pan, -1);
+		var results = p.asStream.nextN(9, ());
+		var expected = [
+			(degree: 0, dur: 0.5, pan: -1),
+			(degree: 2, dur: 0.5, pan: -1),
+			(degree: 4, dur: 0.5, pan: -1),
+			(degree: 6, dur: 1.0, pan: -1),
+			(degree: 0, dur: 1.0, pan: -1),
+			(degree: 2, dur: 1.0, pan: -1),
+			(degree: 4, dur: 0.5, pan: -1),
+			(degree: 6, dur: 0.5, pan: -1),
+			nil
+		];
+		this.assertEquals(results, expected, "mul add set stutter");
+
+		p = Pseed(Pn(175,1), Pbind(\degree, Pseq((0..3), 2), \dur, 0.5).rarely(_.add(\degree, 7)));
+		results = p.asStream.nextN(9, ());
+		expected = [
+			(degree: 0, dur: 0.5),
+			(degree: 7, dur: 0.5),
+			(degree: 8, dur: 0.5),
+			(degree: 1, dur: 0.5),
+			(degree: 2, dur: 0.5),
+			(degree: 3, dur: 0.5),
+			(degree: 0, dur: 0.5),
+			(degree: 1, dur: 0.5),
+			(degree: 9, dur: 0.5),
+		];
+		this.assertEquals(results, expected, "sometimesBy - rarely");
+
+		p = Pseed(Pn(19,1), Pbind(\degree, Pseq((0..3), 2), \dur, 0.5).add(\degree, Pwrand([0, 7], [0.75, 0.25], inf)));
+		results = p.asStream.nextN(9, ()).do(_.postln);
+		expected = [
+			(degree: 0, dur: 0.5),
+			(degree: 8, dur: 0.5),
+			(degree: 2, dur: 0.5),
+			(degree: 10, dur: 0.5),
+			(degree: 0, dur: 0.5),
+			(degree: 8, dur: 0.5),
+			(degree: 2, dur: 0.5),
+			(degree: 3, dur: 0.5),
+			nil
+		];
+		this.assertEquals(results, expected, "add random degree");
+	}
+
 }

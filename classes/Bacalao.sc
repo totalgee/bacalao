@@ -30,9 +30,18 @@ Bacalao {
 		MIDIClient.init(verbose: false);
 
 		Bacalao.prSetupSynthDefs();
+		Bacalao.prSetupEventTypes();
+
+		// Setting a longer buffer for recording is critical, else there are
+		// glitches (in recording, not audible) when asynchronously loading
+		// VST plugins. The recBufSize must be longer than the time it might
+		// take to perform any asynchronous VST operation. Ten seconds is more
+		// than enough in my usage.
+		server = server ? Server.default;
+		server.recorder.recBufSize = (server.sampleRate ?? { server.options.sampleRate ? 44100 } * 10).nextPowerOfTwo;
 
 		Bacalao.config();
-		^super.newCopyArgs(clock, server ? Server.default, verbose ? true, quant, (), (), nil).start.prSetupCmdPeriod.push;
+		^super.newCopyArgs(clock, server, verbose ? true, quant, (), (), nil).start.prSetupCmdPeriod.push;
 	}
 
 	*config {
@@ -194,8 +203,9 @@ Bacalao {
 		};
 
 		playFunc = { arg numChannels, withGate;
+			var freq = \freq.kr(60.midicps);
 			var buf = \buf.kr(0);
-			var rate = \rate.kr(1);
+			var rate = \rate.kr(1) * (freq / 60.midicps);
 			var start = \start.kr(0);
 			var length = \length.kr(1);
 			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
@@ -228,6 +238,8 @@ Bacalao {
 			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
 		}).add;
 
+		this.prSetupInstrumentSynths;
+
 		Safety.addSynthDefFunc(\safeLimitNotify, { |numChans, limit=1|
 			{
 				var limitCtl = \limit.kr(limit).abs;
@@ -247,6 +259,103 @@ Bacalao {
 		// Apply a limiter to prevent clipping if we go above amplitude 1
 		Safety.defaultDefName = \safeLimitNotify;
 		Safety.all.do(_.defName = \safeLimitNotify);
+	}
+
+	// We set up special Event types for playing VST and regular note patterns,
+	// which allow combined note and parameter setting in a single Event
+	*prSetupEventTypes {
+		var handleProxySetParams = {
+			var setPrefix = "p_";
+			var setParams = currentEnvironment.select{ arg v, k;
+				k.asString.beginsWith(setPrefix)
+			};
+			if (setParams.notEmpty) {
+				var setEvent = Event.default.copy;
+				var params = [];
+				var np = ~proxy;
+				setParams.keysValuesDo{ arg k, v;
+					var param = k.asString.drop(setPrefix.size).asSymbol;
+					params = params.add(param);
+					currentEnvironment[k] = nil; // remove param setting from main Event
+					setEvent[param] = v.value;
+				};
+				if (np.isKindOf(NodeProxy)) {
+					setEvent.push;
+					np.set(*np.controlNames.collect(_.name).envirPairs.asOSCArgArray);
+					setEvent.pop;
+				} {
+					"\\proxy key must be set".warn
+				}
+			}
+		};
+
+		var handleVstSetParams = { arg server;
+			var setPrefix = "v_";
+			var setEventType = \vst_set;
+			var setParams = currentEnvironment.select{ arg v, k;
+				k.asString.beginsWith(setPrefix)
+			};
+			if (setParams.notEmpty) {
+				var setEvent = Event.default.copy;
+				var params = [];
+				setParams.keysValuesDo{ arg k, v;
+					var paramNumOrName = k.asString.drop(setPrefix.size);
+					var param = if (paramNumOrName[0].isDecDigit) {
+						// \vst_set wants numbered parameters to be integer keys
+						paramNumOrName.asInteger
+					} {
+						paramNumOrName.asSymbol
+					};
+					params = params.add(param);
+					currentEnvironment[k] = nil; // remove param setting from main Event
+					setEvent[param] = v.value;
+				};
+				setEvent[\type] = setEventType;
+				setEvent[\vst] = ~vst;
+				setEvent[\params] = params;
+				setEvent.push;
+				Event.eventTypes[setEventType].value(server);
+				// setEvent.play;
+				setEvent.pop;
+			}
+		};
+
+		Event.addEventType(\vst_midi_and_pset, { |server|
+			if (~vst.notNil) {
+				handleVstSetParams.(server);
+			};
+			handleProxySetParams.();
+
+			~type = \vst_midi;
+			Event.eventTypes[\vst_midi].value(server);
+			// currentEnvironment.play;
+		});
+		Event.addEventType(\pset_vset_only, { |server|
+			if (~vst.notNil) {
+				handleVstSetParams.(server);
+			};
+			// Here we support setting proxy controls using the prefix...
+			handleProxySetParams.();
+
+			// ...and without (now that the "p_" params are removed)
+			if (~proxy.notNil) {
+				// Code from AbstractPlayControl.initClass in JITLib/ProxySpace/wrapForNodeProxy.sc
+				var controlsToSet = ~proxy.controlNames.collect(_.name);
+				if (~mask.isNil) {
+					// No mask parameter -- don't set "normal" note Event keys like freq/amp/pan
+					controlsToSet = controlsToSet.reject([\freq, \amp, \pan].includes(_));
+				};
+				~proxy.set(*controlsToSet.envirPairs.asOSCArgArray)
+			};
+			// Don't play any note...
+		});
+		Event.addEventType(\note_and_pset, { |server|
+			handleProxySetParams.();
+
+			~type = \note;
+			Event.eventTypes[\note].value(server);
+			// currentEnvironment.play;
+		});
 	}
 
 	// This sets up automatic substitutions (like variables) that may be used
@@ -373,22 +482,36 @@ Bacalao {
 	// These sample instruments can then be played using:
 	//   b.loadSamples("/path/to/bd")
 	//   b.p(1, @~samp"bd bd:2")
-	loadSamples { arg dirPath, name;
+	loadSamples { arg dirPath, name, replace = true;
 		var bufs;
 		var dict = (this.vars[\samp] ?? {
 			this.vars[\samp] = ();
 			this.vars[\samp]
 		});
 		name = this.prMakeVariableName(dirPath, name);
-		if (dict[name].notNil) {
-			"Overwriting ~samp key: '%'".format(name).warn
+		if (dict[name].isNil) {
+			"Creating ~samp key: '%'".format(name).postln;
+			dict[name] = [];
 		} {
-			"Creating ~samp key: '%'".format(name).postln
+			if (replace) {
+				"Replacing ~samp key: '%'".format(name).warn;
+				dict[name] = [];
+			} {
+				"Adding to ~samp key: '%'".format(name).postln
+			}
 		};
-		dict[name] = [];
 		bufs = (dirPath ++ "/*.wav").pathMatch.collect{ arg path;
 			Buffer.read(server, path, action: { arg buf;
-				"loaded %".format(buf).postln;
+				"index %: loaded %".format(dict[name].size, buf).postln;
+				dict[name] = dict[name].add(
+					(buf: buf, start: 0, length: buf.duration, instrument: ('sample' ++ buf.numChannels).asSymbol)
+				)
+			})
+		};
+		if (bufs.isEmpty) {
+			// Maybe it was just a standalone file, not a directory
+			Buffer.read(server, dirPath, action: { arg buf;
+				"index: % loaded %".format(dict[name].size, buf).postln;
 				dict[name] = dict[name].add(
 					(buf: buf, start: 0, length: buf.duration, instrument: ('sample' ++ buf.numChannels).asSymbol)
 				)
@@ -400,10 +523,15 @@ Bacalao {
 	// These buffers can then be played/looped using b.chop:
 	//   b.loadBuffer("/path/to/mySample.wav")
 	//   b.p(1, b.chop(~mySample))
-	loadBuffer { arg filePath, name;
+	loadBuffer { arg filePath, name, replace = true;
 		name = this.prMakeVariableName(filePath, name);
 		if (this.vars[name].notNil) {
-			"Overwriting buffer variable ~%".format(name).warn
+			if (replace) {
+				"Replacing buffer variable ~%".format(name).warn
+			} {
+				"Variable ~% exists...skipping loadBuffer".format(name).warn
+				^this
+			}
 		} {
 			"Creating buffer variable ~%".format(name).postln
 		};
@@ -464,13 +592,52 @@ Bacalao {
 		var namesAndProxies = this.prGetNamesAndProxies;
 		w.addFlowLayout;
 		w.view.hasHorizontalScroller_(false).background_(Color(0.2,0.2,0.4));
-		namesAndProxies.keysValuesDo{ arg name, nd;
+		namesAndProxies.sortedKeysValuesDo{ arg name, nd;
 			if (nd.numChannels.notNil) {
 				StaticText(w, 50@20).string_(name);
-				NdefGui(nd, 5, w, options: NdefGui.big).nameView(name)
+				NdefGui(nd, nd.controlKeys.size.max(4), w, options: NdefGui.big).nameView(name)
 			}
 		};
 		^w;
+	}
+
+	dropGui {
+		var h = HLayout();
+		var win = Window("Sample drop", Rect(400, 400, 600,200)).front.layout_(h);
+		var sampleName = TextField();
+		var bufferName = TextField();
+		var replaceSample = CheckBox(text: "replace").value_(true);
+		var replaceBuffer = CheckBox(text: "replace").value_(true);
+		var vl = VLayout(StaticText().string_("Samples (in ~samp dictionary)"), HLayout(sampleName, replaceSample));
+		var vr = VLayout(StaticText().string_("Buffers"), HLayout(bufferName, replaceBuffer));
+		var validateName = { arg name, path;
+			if (name.isEmpty)
+			{
+				this.prMakeVariableName(path)
+			} {
+				this.prMakeVariableName(name)
+			}
+		};
+		vl.add(DragSink().minSize_(400@100).canReceiveDragHandler_{ arg view;
+			View.currentDrag.isString
+		}.receiveDragHandler_{ arg view;
+			var fileName = View.currentDrag;
+			var name = validateName.(sampleName.string, fileName);
+			view.object = "'%'\n(as ~samp.%)".format(fileName.asPathName.fileNameWithoutExtension, name);
+			this.loadSamples(fileName, name, replaceSample.value);
+		});
+		h.add(vl);
+
+		vr.add(DragSink().minSize_(400@100).canReceiveDragHandler_{ arg view;
+			View.currentDrag.isString
+		}.receiveDragHandler_{ arg view;
+			var fileName = View.currentDrag;
+			var name = validateName.(bufferName.string, fileName);
+			view.object = "'%'\n(as ~%)".format(fileName.asPathName.fileNameWithoutExtension, name);
+			this.loadBuffer(fileName, name, replaceBuffer.value);
+		});
+		h.add(vr);
+		^win
 	}
 
 	defGet { arg trkName;
@@ -523,42 +690,22 @@ Bacalao {
 	// @todo We might want a way to fast-forward when playing a pattern with
 	// long duration, see:
 	//   https://sc-users.bham.ac.narkive.com/IUvoCSGV/fast-forwarding-a-pattern
-	p { arg trkName, pattern, dur, quant, role;
+	p { arg trkName, pattern, dur, quant, role, includeMask = true;
 		var slot;
 		if (trkName.isKindOf(Association)) {
 			#trkName, slot = [trkName.key, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
 			if (dur.isNil) {
-				try {
-					// Try to find a Pbind (or Pmono) somewhere up the chain,
-					// so we can get its duration key. We can't "solve" for all kinds
-					// of patterns -- in which case we just use the default dur of 0,
-					// which is fine (will use the "natural" duration, and quantize to
-					// the next bar instead of the full pattern duration).
-					var eventPat = pattern;
-					var durSeq;
-					while { eventPat.respondsTo(\patternpairs).not } {
-						case
-						{ eventPat.respondsTo(\pattern) } {
-							// e.g. FilterPattern
-							eventPat = eventPat.pattern
-						}
-						{ eventPat.respondsTo(\patterns) } {
-							// e.g. PtimeChain
-							eventPat = eventPat.patterns.first
-						}
-						{ Error("Don't know how to find a Pbind/Pmono from here").throw }
-					};
-					durSeq = eventPat.patternpairs.clump(2).detect{|x| x.first == \dur}[1];
-					dur = durSeq.list.sum * durSeq.repeats;
-					//dur.debug("computed bars");
-				} { arg error;
-					error.errorString.warn;
-					dur = 0; // use "natural" duration
-				}
+				pattern.getDur.debug("pattern duration");
+				// If we have a very long pattern, we don't want to set the
+				// quant to be that long by default, because it will take
+				// too long for the new pattern to take effect, so just use
+				// the default "natural" loop time.
+				// (Tried things like: dur = dur.round.asInt.factors.minItem)
+				dur = 0;
 			};
-			this.prChangePattern(trkName.asSymbol, slot, pattern, dur, quant, role);
+			this.prChangePattern(trkName.asSymbol, slot, pattern, dur, quant, role, includeMask);
 		} {
 			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
 		};
@@ -645,12 +792,30 @@ Bacalao {
 		}
 	}
 
-	pset { arg trkName, pattern, dur=0, quant;
+	// This is a general "set pattern" method, which can support
+	// setting VST params or NodeProxy controls, without trying
+	// to produce any kind of note event.
+	// It expects Proxy control names to be prefixed with 'p_',
+	// and VST param names to be prefixed with 'v_'.
+	pset { arg trkName, pattern, dur=0, quant, includeMask = false;
+		// \pset_vset_only is not a real Proxy role, but we use it here to
+		// flag our special handling for a pattern that only sets Proxy
+		// and VST parameters
+		this.p(trkName, pattern, dur, quant, \pset_vset_only, includeMask: includeMask);
+	}
+
+	// The following two aren't particularly useful, given that you can
+	// just call p() with the desired role (\pset or \xset).
+	psetRole { arg trkName, pattern, dur=0, quant;
 		this.p(trkName, pattern, dur, quant, \pset);
 	}
 
-	xset { arg trkName, pattern, dur=0, quant;
+	xsetRole { arg trkName, pattern, dur=0, quant;
 		this.p(trkName, pattern, dur, quant, \xset);
+	}
+
+	hush { arg fadeTime = 1;
+		this.clear(this.trks, fadeTime)
 	}
 
 	prFade { arg setFunc, endFunc, fadeTime = 2, timeStep = 0.15;
@@ -699,9 +864,12 @@ Bacalao {
 			"trkName and index should be an Association, e.g: b.fx(\\drum -> 10, ...)".error;
 			^this;
 		};
+
 		#trkName, index = [trkNameAndIndex.key, trkNameAndIndex.value];
 		if (index.isInteger and: {index > 0}) {
 			var np = this.proxy(trkName);
+			// Make it into a audio NodeProxy if it's currently empty
+			np.numChannels ?? { np.source = { Silence.ar!2 } };
 			np[index] = filterFunc !? {\filter -> filterFunc};
 			this.sched({
 				np.set((\wet.asString ++ index).asSymbol, wet);
@@ -849,11 +1017,11 @@ Bacalao {
 
 	prFree { arg trkName, fadeTime=0;
 		var vstCtl;
+		var extraTime = 1;
 		this.clear(trkName = trkName.asSymbol, fadeTime);
 
 		vstCtl = this.vst(trkName);
 		if (vstCtl.notNil) {
-			var extraTime = 1;
 			var vstProxy = this.proxy(trkName);
 			// Remove the dictionary entry now, so any future vstInit
 			// will create a new VST instrument
@@ -867,7 +1035,16 @@ Bacalao {
 				vstCtl.close;
 				nil
 			});
-		}
+		};
+
+		// Don't schedule on the Bacalao clock, because fadeTime should be in "wall" clock time
+		SystemClock.sched(fadeTime ? 0 + server.latency + extraTime, {
+			"Undefining Ndef %".format(trkName).postln;
+			Ndef.dictFor(server).removeAt(trkName);
+			// Also remove any defaults for this track
+			this.defSet(trkName, ());
+			nil
+		});
 	}
 
 	vstClearAll { arg fadeTime=1;
@@ -1042,14 +1219,19 @@ Bacalao {
 		}
 	}
 
-	prChangePattern { arg trkName, slot, pattern, loopDur, patternQuant, role;
+	prGetPdefName { arg trkName, slot;
+		^(trkName.asString ++ $/ ++ (slot ? 0) ++ $/ ++ server.name).asSymbol;
+	}
+
+	prChangePattern { arg trkName, slot, pattern, loopDur, patternQuant, role, includeMask = true;
 		// Pdef doesn't have a per-Server ProxySpace, so
 		// we make up a "unique" name by combining the track name
 		// and this instance's Server name.
 		var replacePatterns = slot.isNil;
 		// Note we don't use +/+ here for cross-platform reasons..we always want joining with '/'
-		var pdefName = (trkName.asString ++ $/ ++ (slot ? 0) ++ $/ ++ server.name).asSymbol.debug("pdefName");
+		var pdefName = this.prGetPdefName(trkName, slot);
 		var pdef, ndef, vst = this.vst(trkName = trkName.asSymbol);
+		var quantStartBeat;
 
 		// Stretch it so the durations in bars are converted to beats on our clock
 		if (pattern.notNil) {
@@ -1066,7 +1248,9 @@ Bacalao {
 
 			// We set default mask 1 so we can use it for triggering with pset
 			// (goes to 0/Rest when using PmaskBjork or degrade).
-			pattern = pattern << Pbind(\mask, 1);
+			if (includeMask) {
+				pattern = pattern << Pbind(\mask, 1);
+			};
 			if (defaultDict.notNil) {
 				pattern = pattern << defaultDict << globalDefaultDict;
 			};
@@ -1100,14 +1284,26 @@ Bacalao {
 				this.prRemoveUnusedPatternSlots(trkName)
 			};
 		};
-		if (vst.notNil and: { role.isNil }) {
-			pdef.source = pattern <> (type: \vst_midi, vst: vst);
+
+		// We set a 'time' key in our Events, which provides time since playing.
+		// Otherwise, the clock restarts on a given sub-pattern, for example amp"Psine.exprange(8,-0.25,0.1,1)"
+		quantStartBeat = patternQuant.nextTimeOnGrid(clock);
+		case
+		{ vst.notNil and: { role.isNil } } {
+			pdef.source = pattern <> (type: \vst_midi_and_pset, vst: vst, proxy: ndef, time: { thisThread.beats - quantStartBeat });
 			// Must include clock argument here, even if we set the Pdef's clock
 			// See issue: https://github.com/supercollider/supercollider/issues/4803
 			pdef.play(clock);
 			// Explicitly resume processing the Synth in case it's bypassed
 			ndef.set(\bypass, 0);
-		} {
+		}
+		{ role == \pset_vset_only } {
+			pdef.source = pattern <> (type: \pset_vset_only, vst: vst, proxy: ndef, time: { thisThread.beats - quantStartBeat });
+			// Must include clock argument here, even if we set the Pdef's clock
+			// See issue: https://github.com/supercollider/supercollider/issues/4803
+			pdef.play(clock);
+		}
+		{
 			// Don't redefine the Ndef source all the time with
 			// the pattern, because that will sometimes double-up the
 			// first event (because of the quant). Pdef has special
@@ -1127,7 +1323,7 @@ Bacalao {
 				// Just setting the Pdef source here works properly with
 				// quantization, after the fix from:
 				// https://github.com/supercollider/supercollider/pull/4779
-				pdef.source = pattern;
+				pdef.source = pattern <> (type: \note_and_pset, proxy: ndef, time: { thisThread.beats - quantStartBeat });
 			};
 		};
 		if (ndef.isMonitoring.not) {
@@ -1144,10 +1340,6 @@ Bacalao {
 		var replacePatterns = slot.isNil;
 		// Note we don't use +/+ here for cross-platform reasons..we always want joining with '/'
 		var ndef, vst = this.vst(trkName = trkName.asSymbol);
-		if (vst.notNil and: { replacePatterns || slot == 0 }) {
-			"Can't replace slot 0 source of a VST proxy".warn;
-			^this;
-		};
 
 		// The quantization until this point has been in bars, not beats
 		quant = (quant ?? { #[1, 0] }) * clock.beatsPerBar;
@@ -1155,15 +1347,32 @@ Bacalao {
 		if (replacePatterns) {
 			// Set the source of other slots to nil (uses current Quant)
 			this.prClearOtherPatternSlots(trkName, except: nil);
+		} {
+			// Remove only this slot's Pdef pattern (if there is one)
+			var pdefName = this.prGetPdefName(trkName, slot);
+			if (Pdef.all.keys.includes(pdefName)) {
+				var pdef = Pdef(pdefName);
+				pdef.debug("stopping").source = nil;
+			};
 		};
 
-		"Setting % source %".format(trkName, slot ? 0).postln;
-		ndef[slot ? 0] = source;
-		if (ndef.isMonitoring.not) {
-			if (verbose) {
-				"Playing Ndef(%)".format(trkName).postln
-			};
-			ndef.play(out: 0, group: ndef.homeServer.defaultGroup);
+		if (vst.notNil and: { replacePatterns || (slot == 0) }) {
+			"Can't replace slot 0 source of a VST proxy".warn;
+			^this;
+		};
+
+		slot = slot ? 0;
+		if (ndef[slot] != source) {
+			"Setting '%' source % to %".format(trkName, slot ? 0, source).postln;
+			ndef[slot ? 0] = source;
+		};
+		if (source.notNil) {
+			if (ndef.isMonitoring.not) {
+				if (verbose) {
+					"Playing Ndef(%)".format(trkName).postln
+				};
+				ndef.play(out: 0, group: ndef.homeServer.defaultGroup);
+			}
 		}
 	}
 
@@ -1175,8 +1384,8 @@ Bacalao {
 BacalaoParser {
 	classvar eventAbbrevs;
 	const unsignedInt = "\\d+";
-	const eventPattern = "(?:[^a-z@]*|(@|\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
-	const <charPattern = "(?:[^a-z@]*|(@|\\b[a-z][a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
+	const eventPattern = "(?:[^a-z@]*|(@|\\b[a-z][_a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
+	const <charPattern = "(?:[^a-z@]*|(@|\\b[a-z][_a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
 	const nonArraySpace = "[^[:space:]\\][]+";
@@ -1557,7 +1766,8 @@ BacalaoParser {
 				};
 
 			}.value;
-			[curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
+			// [curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
+			(fullMatch.last -> replaceStr).postln;
 			// [patternArray, replaceStr].postln;
 			if (replaceStr.notNil) {
 				replacements.reverseDo{ arg replacement, i;
@@ -1756,7 +1966,8 @@ BacalaoParser {
 					}
 				};
 			}.value;
-			[curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
+			// [curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
+			(fullMatch.last -> replaceStr).postln;
 			// [patternArray, replaceStr].postln;
 			if (replaceStr.notNil) {
 				code = code.replaceAt(replaceStr, fullMatch.first + curOffset, fullMatch.last.size);
@@ -2108,7 +2319,10 @@ PmaskBjork {
 
 Psine {
 	*new { arg periodBars=1, phase=0, mul=1, add=0, repeats=inf;
-		^((Ptime(repeats) / Pfunc{thisThread.clock.beatsPerBar} / periodBars + phase) * 2pi).sin * mul + add;
+		// We don't use Ptime (except as fallback when a 'time' key isn't there)
+		// so we get elapsed time for the "overall" pattern, not sub-patterns.
+		var tPattern = Pif(Pfunc{|ev| ev[\time].notNil }, Pn(Pkey(\time), repeats), Ptime(repeats));
+		^((tPattern / Pfunc{thisThread.clock.beatsPerBar} / periodBars + phase) * 2pi).sin * mul + add;
 	}
 
 	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
@@ -2122,7 +2336,10 @@ Psine {
 
 Psaw {
 	*new { arg periodBars=1, phase=0, mul=1, add=0, repeats=inf;
-		^((Ptime() / Pfunc{thisThread.clock.beatsPerBar} + phase).mod(periodBars) / periodBars * 2 - 1) * mul + add;
+		// We don't use Ptime (except as fallback when a 'time' key isn't there)
+		// so we get elapsed time for the "overall" pattern, not sub-patterns.
+		var tPattern = Pif(Pfunc{|ev| ev[\time].notNil }, Pn(Pkey(\time), repeats), Ptime(repeats));
+		^((tPattern / Pfunc{thisThread.clock.beatsPerBar} + phase).mod(periodBars) / periodBars * 2 - 1) * mul + add;
 	}
 
 	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
