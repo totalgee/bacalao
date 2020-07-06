@@ -56,10 +56,48 @@
 		SynthDef(\ping, { arg out = 0, freq = 440, amp = 0.1, pan = 0.0, gate = 1;
 			var n = 4;
 			var att = \att.ir(0.01);
+			var dec = \dec.ir(0.3); // decayTime
+			var sus = \sus.ir(0.5); // sustainLevel
 			var rel = \rel.ir(0.5);
-			var sig = SinOscFB.ar(freq * Rand(0.995, 1.005!n), ExpRand(0.2, 1.2), n.reciprocal.sqrt).mean;
-			var env = EnvGen.kr(Env.asr(att, 1, rel), gate, doneAction: Done.freeSelf);
-			Out.ar(out, Pan2.ar(sig * env, pan, amp));
+			var emphasis = amp.lincurve(0.0,1, 0.5,4,-1.5);
+			var sig = Splay.ar(SinOscFB.ar(freq * Rand(0.995, 1.005!n), ExpRand(0.2, 0.4!n) * emphasis, 1), 0.5, 1, pan) * -9.dbamp;
+			var env = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: Done.freeSelf);
+			OffsetOut.ar(out, sig * env * amp);
+		}).add;
+
+		SynthDef(\saw, { arg out = 0, freq = 440, amp = 0.1, pan = 0.0, gate = 1;
+			var n = 4;
+			var att = \att.ir(0.01);
+			var dec = \dec.ir(0.3); // decayTime
+			var sus = \sus.ir(0.5); // sustainLevel
+			var rel = \rel.ir(0.5);
+			var pitchShift = \pitchShift.ir(-0.125); // how much to shift pitch in semitones
+			var shiftTime = \shiftTime.ir(4); // over how many seconds to shift pitch
+			var emphasis = amp.lincurve(0.1,1, 0.7,3,-1.5);
+
+			var sig = Splay.ar(SawDPW.ar(freq * Rand(0.995, 1.005!n) * Line.kr(1, pitchShift.midiratio, shiftTime), Rand(-1.0, 1.0!n)), 0.5, 1, pan) * -3.dbamp;
+			var env = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: Done.freeSelf);
+			sig = (sig * emphasis).distort;
+			OffsetOut.ar(out, sig * env * amp);
+		}).add;
+
+		SynthDef(\square, { arg out = 0, freq = 440, amp = 0.1, pan = 0.0, gate = 1;
+			var n = 4;
+			var att = \att.ir(0.01);
+			var dec = \dec.ir(0.3); // decayTime
+			var sus = \sus.ir(0.5); // sustainLevel
+			var rel = \rel.ir(0.5);
+			// See question on sc-users about why width argument doesn't support array arg
+			// (unless you call "poll" on it first...)
+			var pulseWidth = \width.kr(0.5); // doesn't work if you add: + Rand(-0.02, 0.02!n);
+			var pitchShift = \pitchShift.ir(-0.125); // how much to shift pitch in semitones
+			var shiftTime = \shiftTime.ir(4); // over how many seconds to shift pitch
+			var emphasis = amp.lincurve(0.1,1, 0.7,3,-1.5);
+
+			var sig = Splay.ar(PulseDPW.ar(freq * Rand(0.995, 1.005!n) * Line.kr(1, pitchShift.midiratio, shiftTime), pulseWidth), 0.5, 1, pan) * -3.dbamp;
+			var env = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: Done.freeSelf);
+			sig = (sig * emphasis).distort;
+			OffsetOut.ar(out, sig * env * amp);
 		}).add;
 
 		// A persistent Synth, to be played using control patterns and 'mask' trigger for notes
@@ -453,16 +491,11 @@
 
 	}
 
-	printSynths {
-		var names = SynthDescLib.all[\global].synthDescs.keys.reject{ arg k;
-			k.asString.beginsWith("system_")
-		}.asSortedList.asArray;
-		var width = 16;
-		var maxWidth = 80;
+	prPrintInColumns { arg strings, width = 16, maxWidth = 80;
 		var curColumn = 0;
 		var separator = " | ";
-		"----- instruments (SynthDefs):".postln;
-		names.do{ arg k;
+		var needNewLine = true;
+		strings.do{ arg k;
 			var str = k.asString;
 			var newColumn = curColumn + str.size;
 			var padStr = str.padRight(newColumn.roundUp(width) - curColumn);
@@ -470,13 +503,51 @@
 			curColumn = curColumn + padStr.size;
 			if (curColumn < maxWidth) {
 				separator.post;
+				needNewLine = true;
 				curColumn = curColumn + separator.size;
 			} {
 				"".postln;
+				needNewLine = false;
 				curColumn = 0;
 			}
 		};
-		"".postln;
+		if (needNewLine) { "".postln };
+	}
+
+	printSynths {
+		var names = SynthDescLib.all[\global].synthDescs.keys.reject{ arg k;
+			k.asString.beginsWith("system_")
+		}.asSortedList.asArray;
+		"----- instruments (SynthDefs):".postln;
+		this.prPrintInColumns(names, 16, 80);
+		^""
+	}
+
+	printSynthControls { arg synthName;
+		var defaultSet = Set[\out, \pan, \freq, \amp, \gate];
+		var synthDesc = SynthDescLib.all[\global].synthDescs[synthName.asSymbol];
+		if (synthDesc.notNil) {
+			var getControlStrings = { arg controls;
+				controls.collect{ arg c;
+					"% def: % [%] %".format(
+						c.name.asString.padRight(10),
+						c.defaultValue.round(1e-4),
+						c.rate,
+						if (c.lag > 0) { "(lag %)".format(c.lag) } { "" }
+					);
+				}
+			};
+			var defaultControls = synthDesc.controls.select{ arg c; defaultSet.includes(c.name) }.sort{ |a,b| a.name < b.name };
+			var otherControls = synthDesc.controls.select{ arg c; defaultSet.includes(c.name).not }.sort{ |a,b| a.name < b.name };
+			"----- SynthDef '%' common controls:".format(synthName).postln;
+			this.prPrintInColumns(getControlStrings.(defaultControls), 35, 70);
+			if (otherControls.size > 0) {
+				"----- other controls:".postln;
+				this.prPrintInColumns(getControlStrings.(otherControls), 35, 70);
+			}
+		} {
+			"Synth '%' not found".format(synthName).warn;
+		};
 		^""
 	}
 

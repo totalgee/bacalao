@@ -88,7 +88,7 @@ BacalaoSpatialSettings {
 			length = length ?? { buf.duration };
 			echoAmp = echoAmp ?? 0;
 			echoDelay = echoDelay ?? exprand(0.01, 0.1);
-			echoAzDeg = echoAzDeg ?? { azDeg + rrand(-150, 150) };
+			echoAzDeg = echoAzDeg ?? { azDeg + ([-1,1].choose * rrand(90, 170)) };
 			echoElevDeg = echoElevDeg ?? { elevDeg.neg * rrand(0.5, 1) };
 			echoRadius = echoRadius ?? { radius * exprand(1.5, 4.0) };
 			echoSuffix = if (echoAmp > 0) { "_echo" } { "" };
@@ -392,14 +392,14 @@ BacalaoSpatialSettings {
 			var suffix = if (addEcho) { "_echo" } { "" };
 			SynthDef(("sample1_hoa3" ++ suffix).asSymbol, { arg out=0, buf, rate=1, amp=0.1, start=0.0, length=1.0;
 				var sig = PlayBuf.ar(1, buf, rate * BufRateScale.kr(buf),
-					1, start * SampleRate.ir, 1);
+					1, start * BufSampleRate.ir(buf), 1);
 				var hoa = applyEnvAndHoaEncode.(sig * amp, 3, addEcho, rate, length);
 				Out.ar(out, hoa);
 			}).add;
 
 			SynthDef(("sample2_hoa3" ++ suffix).asSymbol, { arg out=0, buf, rate=1, amp=0.1, start=0.0, length=1.0;
 				var sig = PlayBuf.ar(2, buf, rate * BufRateScale.kr(buf),
-					1, start * SampleRate.ir, 1).mean;
+					1, start * BufSampleRate.ir(buf), 1).mean;
 				var hoa = applyEnvAndHoaEncode.(sig * amp, 3, addEcho, rate, length);
 				Out.ar(out, hoa);
 			}).add;

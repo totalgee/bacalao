@@ -68,10 +68,28 @@ b.p(\a, deg"[0 2*2 4*3 7]@4")
 // You can also use bar lines to divide things up (often easier to understand)
 b.p(\a, deg"0|2*2|4*3|7")
 
+
+// Basics - chaining patterns in time
+// ==================================
+// If you're familiar with SuperCollider Events and Patterns, you'll
+// know the Pchain composition pattern, normally abbreviated <>.
+// Bacalao adds a PtimeChain pattern, abbreviated <<, which you will
+// use to combine event patterns, taking into account durations.
+// It works similarly to the # (aka |>) operator in TidalCycles, where the
+// time "structure" comes from the left-most pattern.
+
+b.p(\a, deg"0 2 4 7" << amp"0.4") // set all note amplitudes to 0.4
+b.p(\a, deg"0 2 4 7" << (amp: 0.4)) // same thing, but \amp has no duration
+b.p(\a, deg"0 2 4 7" << amp"0.6 0.1@3") // play last notes quieter than first
+b.p(\a, deg"0*(5,8) 2 4 7" << amp"0.3 0.7" << pan"[-1 1]*2")
+b.hush
+
+
 // Alternation patterns
 // ====================
 // You can alternate values in the pattern (choose one each time through, in the order given)
 b.p(\a, deg"<0 1> 2 3 <4 5 7>")
+b.p(\a, deg"<0 1!3> 2 3 <4 5 6 7>") // you can repeat an element several times
 // Note that currently alternation isn't too flexible,
 // for example it doesn't properly support sub-sequences.
 
@@ -173,7 +191,7 @@ mn"60" // midinote
 deg"0" // degree
 oct"4" // octave
 leg"1.1" // legato
-slow"2" // stretch -- not much of an abbreviation, but more similar to TidalCycles notation
+slow"2" // stretch -- not much of an abbreviation, but similar to TidalCycles
 ins"\mySynth" // instrument (can also use inst)
 
 // Rests are specified using tilde (~)
@@ -400,7 +418,7 @@ Bake(Pr2(0.5, nil, 8).round(0.01)) // uniform random bewteen -0.5 and 0.5, diffe
 // Bacalao patterns can work on any SynthDef instrument. Let's define one:
 
 (
-SynthDef(\ping, { arg out=0, freq=440, amp=0.1, pan=0.0, gate=1;
+SynthDef(\sinfb, { arg out=0, freq=440, amp=0.1, pan=0.0, gate=1;
 	var sig = SinOscFB.ar(freq * Rand(0.995, 1.005!2), ExpRand(0.2, 1.2)).mean;
 	var env = EnvGen.kr(Env.asr(0.01, 1, 0.5), gate, doneAction: 2);
 	Out.ar(out, Pan2.ar(sig * env, pan, amp));
@@ -411,15 +429,15 @@ b.tempo = 2;
 
 // Bacalao (like TidalCycles) is primarily designed to work with loops of note events.
 // You define a looping (or non-looping) pattern like this:
-b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~" <> leg"Pexprand(0.2,1)" <> inst"\ping")
+b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~" << leg"Pexprand(0.2,1)" << inst"\sinfb")
 
 // There are a few things you can do to modify patterns (not many so far),
 // such as "degrading" it (replacing Events by Rests by a random fraction).
-b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~".degrade(0.75) <> leg"0.3" <> oct"Pwhite(4,5)" <> inst"\ping")
+b.p(\melody, deg"5 <2 ~ -2 ~> 4 <3 7 -1> 0 6 4 ~".degrade(0.75) << leg"0.3" << oct"Pwhite(4,5)" << inst"\sinfb")
 
 // We can set a default value for the \melody track,
-// so we don't have to keep adding the inst"\ping"
-b.defSet(\melody, (instrument: \ping))
+// so we don't have to keep adding the inst"\sinfb"
+b.defSet(\melody, (instrument: \sinfb))
 
 b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2")
 b.p(\melody, deg"[0 0 4 4 5 5 4@2 3 3 2 2 1 1 0@2]@2".degrade)
@@ -452,6 +470,9 @@ b.p(\melody, deg"[0 1 2 3]", 3) // extending it to three bars (one plus two of s
 b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]") // full pattern of five bars
 b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]", 2) // truncated to two bars
 b.p(\melody, deg"[0 1 2 <3 4 5 6 7>]", 2.625) // truncated to 2.625 bars (why not; nice for syncopation!)
+// Add a kind of metronome, for contrast
+b.p(\drum, deg"0!3 0*2" << ins"\clap_electro" << amp"0.4 0.1@3")
+b.clear(\drum)
 
 // Remember you can extend pattern durations using the @ notation
 (
@@ -466,6 +487,8 @@ b.p(\melody2, deg"[0 1 2 3 4 5 6 7]@2" <> pan"0.7" <> inst"\ping");
 b.clear(\melody2);
 b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"-0.7" << lag"0/8" << leg"0.25", 2);
 b.p(\melody -> 1, deg"[0 1 2 3 4 5 6 7]@2".degrade(0.75) << pan"0.7" << lag"1/8" << leg"0.25", 2);
+// 'toff' (timingOffset is like 'lag', but tempo-relative rather than in seconds)
+b.p(\melody -> 1, deg"[0 1 2 3 4 5 6 7]@2".degrade(0.75) << pan"0.7" << toff"1/4" << leg"0.25", 2);
 
 // If you want to redefine the original without stopping the '1' slot, use index '0' explicity
 b.p(\melody -> 0, deg"[3 1 0 6 7 5 4 2]@2" << pan"-0.7", 2);
@@ -473,26 +496,28 @@ b.p(\melody -> 1, deg"[3 0 7 4]@2" << oct"3" << pan"0.7", 2);
 
 // Besides the Bjorklund pattern notation "*(k,n,o)" or "!(k,n,o)",
 // there is also a way to use Bjorklund patterns to produce masking effects:
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7")
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << mask"Pbjork(5,8)")
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"0.7 0.1@7")
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"0.7 0.1@7" << mask"Pbjork(5,8)")
 // mask"Pbjork(...)" can be replaced by PmaskBjork(...) -- longer, but with auto-completion
-b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"1 0.1@7" << PmaskBjork(3,8,1))
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << mask"Pbjork(5,16)")
-b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"1 0.1@15" << PmaskBjork(7,16))
+b.p(\melody, deg"0 5 3 -1 2 2 9 8" << amp"0.7 0.1@7" << PmaskBjork(3,8,1))
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"0.7 0.1@15" << mask"Pbjork(5,16)")
+b.p(\melody, deg"[0 5 3 -1 2 2 9 8]*2" << amp"0.7 0.1@15" << PmaskBjork(7,16))
 
 // You can adjust the volume of a pattern:
 b.db(\melody, -6)
 
 // You can clear (and fade out) patterns using clear (or free, which also removes
 // VST instruments completely from the server...so normally you should use clear)
-[\melody, \melody2].do(b.clear(_, 8))
+b.clear([\melody, \melody2], 8)
+b.hush(8) // shorter way, if you want to clear *all* running tracks
 
 //////////////////////////////////////////////////////////////////////
 // Bacalao effects
 //////////////////////////////////////////////////////////////////////
 
 // You can apply effects to pattern instruments, and then pattern their parameters.
-b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"Pbrown(-0.7,0.7,0.3)" <> (instrument: \ping, amp: 0.5));
+p = Pbrown(-0.7,0.7,0.3);
+b.p(\melody, deg"[0 1 2 3 4 5 6 7]@2" << pan"p" << (instrument: \ping, amp: 0.5));
 b.fx(\melody -> 1, { arg in; BBandPass.ar((in * \overdrive.kr(1, 0.5)).softclip, \bpf.kr(400, 0.5), \bpq.kr(1, 0.5), 1)})
 b.fx(\melody -> 2, { arg in; CombL.ar(in.reverse, 1, 0.375 * b.tempo, 2) }, 0.4);
 b.fx(\melody -> 3, { arg in; JPverb.ar(in, 3) }, 0.3)
@@ -503,11 +528,11 @@ b.fx(\melody -> 3, b.fxVerb(3), 0.3)
 // You can even use function composition for fx:
 b.fx(\melody -> 2, b.fxDelay(0.375, 2) <> b.fxCrush(4), 0.4);
 
-b.pset(\melody -> 100, overdrive"1@3 <15 1 4>" <> slow"2", 6)
-b.pset(\melody -> 101, bpf"80 2000" <> bpq"0.5" <> slow"4", 4)
+b.pset(\melody -> 100, overdrive"1@3 <15 1 4>" << slow"2", 6)
+b.pset(\melody -> 101, bpf"80 2000" << bpq"0.5" << slow"4", 4)
 // Note there are new patterns (Psine, Psaw) to do time-based sine and saw waves
-b.pset(\melody -> 101, bpf"Psine.exprange(16,-0.25,80,2000)" <> (dur: 1/8, bpq: 1))
-b.pset(\melody -> 101, bpf"Psaw.exprange(4,0,80,2000)" <> (dur: 1/8, bpq: 1), 4)
+b.pset(\melody -> 101, bpf"Psine.exprange(16,-0.25,80,2000)" << (dur: 1/8, bpq: 1))
+b.pset(\melody -> 101, bpf"Psaw.exprange(4,0,80,2000)" << (dur: 1/8, bpq: 1), 4)
 // Stop the "set" pattern
 b.pset(\melody -> 101, nil)
 // Set values (constant value, not a pattern)
@@ -787,7 +812,7 @@ b.p(\n, @~samp"numbers:0 <numbers:2 numbers:4> <~!2 numbers:r>" << amp"0.5")
 // You can also play the samples as "notes", adjusting the playback speed relative to middle C
 b.p(\n, note"0 0 | 2*4 [4!3 -1]" << @~samp"numbers:r" << amp"0.5", quant: [1, 0.95])
 b.p(\n, note"0*4 | 2*3 4*2 <-1 -3>*2 | -16 | -28 [8 7 6 5 4 3 2 1]" << @~samp"numbers:8 numbers:r" << amp"0.8 0.4!3", quant: [1, 0.95])
-
+b.hush
 
 //////////////////////////////////////////////////////////////////////
 // Modifier functions on Patterns

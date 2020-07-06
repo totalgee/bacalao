@@ -38,6 +38,7 @@ Bacalao {
 		// take to perform any asynchronous VST operation. Ten seconds is more
 		// than enough in my usage.
 		server = server ? Server.default;
+		server.options.memSize = max(server.options.memSize, 128 * 1024);
 		server.recorder.recBufSize = (server.sampleRate ?? { server.options.sampleRate ? 44100 } * 10).nextPowerOfTwo;
 
 		Bacalao.config();
@@ -208,12 +209,15 @@ Bacalao {
 			var rate = \rate.kr(1) * (freq / 60.midicps);
 			var start = \start.kr(0);
 			var length = \length.kr(1);
-			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * SampleRate.ir, 1);
+			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * BufSampleRate.kr(buf), 1);
+			var fade = 0.01;
+			var timeToEnd = (BufDur.kr(buf) - start - fade).max(0);
+			var segmentDur = min(length / rate.abs, timeToEnd);
 			var env = if (withGate) {
-				EnvGen.ar(Env.linen(0.01, (length / rate - 0.02).max(0), 0.01), doneAction: Done.none) *
-				EnvGen.ar(Env.asr(0.01, 1, 0.01), \gate.kr(1), doneAction: Done.freeSelf);
+				EnvGen.ar(Env.linen(fade, (segmentDur - fade).max(0), fade), doneAction: Done.none) *
+				EnvGen.ar(Env.asr(fade, 1, fade), \gate.kr(1), doneAction: Done.freeSelf);
 			} {
-				EnvGen.ar(Env.linen(0.01, (length / rate - 0.02).max(0), 0.01), doneAction: Done.freeSelf);
+				EnvGen.ar(Env.linen(fade, (segmentDur - fade).max(0), fade), doneAction: Done.freeSelf);
 			};
 			sig * env;
 		};
@@ -394,7 +398,11 @@ Bacalao {
 						substitute.asArray.wrapAt(index.asInteger)
 					}
 				} {
-					substitute.first
+					if (substitute.isKindOf(Routine)) {
+						substitute.value // take the next value here, not first
+					} {
+						substitute.first
+					}
 				}
 			}
 		}
@@ -868,11 +876,17 @@ Bacalao {
 		#trkName, index = [trkNameAndIndex.key, trkNameAndIndex.value];
 		if (index.isInteger and: {index > 0}) {
 			var np = this.proxy(trkName);
+			var wetParam = (\wet.asString ++ index).asSymbol;
+
 			// Make it into a audio NodeProxy if it's currently empty
 			np.numChannels ?? { np.source = { Silence.ar!2 } };
+			if (np[index].isNil) {
+				// Start the thing quiet initially, set the wet at the next quant
+				np.set(wetParam, 0);
+			};
 			np[index] = filterFunc !? {\filter -> filterFunc};
 			this.sched({
-				np.set((\wet.asString ++ index).asSymbol, wet);
+				np.set(wetParam, wet);
 			}, 1);
 		} {
 			"fx index should be an integer greater than 0...skipping".warn;
@@ -882,6 +896,15 @@ Bacalao {
 	fxClear { arg trkName;
 		var np = this.proxy(trkName);
 		np.objects.indices[1..].do(np[_] = nil);
+	}
+
+	// Set all slot effects to dry (with optional fadeTime), without removing them
+	fxDry { arg trkName, fadeTime = 0;
+		var np = this.proxy(trkName);
+		np.objects.indices[1..].do{ arg slot;
+			var key = ("wet" ++ slot).asSymbol;
+			this.set(trkName, key, 0, fadeTime);
+		}
 	}
 
 	// Chop a Buffer into a number of pieces, returning a Pbind with the appropriate
@@ -897,8 +920,8 @@ Bacalao {
 			lookup
 		};
 		var barDur = clock.beatsPerBar / clock.tempo;
-		var bars = desiredBars ?? { (buf.duration / barDur).max(0.5).round.debug("chop calculated bars") };
-		var origGrainDur = buf.duration / pieces;
+		var bars = (desiredBars ?? { (buf.duration / barDur).max(0.5).round.debug("chop calculated bars") }).max(0.1);
+		var origGrainDur = buf.duration / (pieces = pieces.max(1));
 		var starts = (0..pieces-1) * origGrainDur;
 		var cycleDur = bars * clock.beatsPerBar / clock.tempo;
 		var rate = desiredRate ?? { (buf.duration / cycleDur).debug("chop calculated rate") };
@@ -1418,10 +1441,11 @@ BacalaoParser {
 		var labelWithMods;
 		var elemWithMods;
 		var arrayWithMods;
-		// Number or Bjorklund sequence args e.g. (3,8) or (7,16,1)
+		// Number or Bjorklund sequence args e.g. (3,8) or (7,16,1), but can also
+		// extend durations after optional initial Rest: (x3,8) or (x7,16,1)
 		var unsignedIntOrBjork;
 		numberInt = "-?" ++ unsignedInt;
-		unsignedIntOrBjork = unsignedInt ++ "|\\(" ++ unsignedInt ++ "," ++ unsignedInt ++ "(?:," ++ numberInt ++ ")?\\)";
+		unsignedIntOrBjork = unsignedInt ++ "|\\(x?" ++ unsignedInt ++ "," ++ unsignedInt ++ "(?:," ++ numberInt ++ ")?\\)";
 		reCharEventsPerBar = "^(" ++ unsignedInt ++ ")@";
 		numberFloat = "-?" ++ unsignedFloat;
 		// elemModifiers must be in the correct order (optional repeat, then optional hold, then optional duplicate)
@@ -1730,9 +1754,9 @@ BacalaoParser {
 						}
 					} {
 						if (patternType == '@') {
-							replaceStr = "Pchain(Pbind('dur', %), Pn(%))".format(durs[0], elemStr);
+							replaceStr = "Pchain(Pbind('dur', Pn(%, 1)), Pn(%))".format(durs[0], elemStr);
 						} {
-							replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elemStr, durs[0]);
+							replaceStr = "Pbind('%', %, 'dur', Pn(%, 1))".format(patternType, elemStr, durs[0]);
 						}
 					}
 				};
@@ -2084,9 +2108,31 @@ BacalaoParser {
 		}
 		{ repeatStr.first == $( } {
 			var k, n, shift;
-			#k, n, shift = repeatStr.trim("()").split($,).asInteger;
-			shift = shift ? 0;
-			Bjorklund2(k, n).rotate(-1 * shift)
+			var trimmed = repeatStr.trim("()");
+			// We provide two options:
+			// "(3,8,1)" will give a Euclidean sequence of uniform durations with interspersed Rests
+			//   [ Rest(1), Rest(1), 1, Rest(1), Rest(1), 1, Rest(1), 1 ]
+			// "(x3,8,1)" will give a Euclidean sequence of extended durations (after optional initial Rest)
+			//   [ Rest(2), 3, 2, 1 ]
+			if (trimmed.first == $x) {
+				trimmed = trimmed.drop(1);
+				#k, n, shift = trimmed.split($,).asInteger;
+				shift = shift ? 0;
+				// This is (almost) equivalent to Bjorklund2(k, n).rotate(-1 * shift),
+				// except that we add an initial Rest when required to support rotating
+				// through all the possible 'n' positions (not just 'k' positions).
+				Bjorklund(k, n).rotate(-1 * shift).integrate.separate{ |a,b| a != b }.collect{ arg x;
+					if (x.first == 0) {
+						Rest(x.size)
+					} {
+						x.size
+					}
+				}
+			} {
+				#k, n, shift = trimmed.split($,).asInteger;
+				shift = shift ? 0;
+				Bjorklund(k, n).rotate(-1 * shift).collect{ arg x; if (x == 0) { Rest(1) } { x } }
+			};
 		}
 		{
 			1 ! repeatStr.asInteger
@@ -2148,10 +2194,10 @@ BacalaoParser {
 					dupl = this.prGetRepeatsArray(dupl);
 					// "Adding a result: %".format(elem).postln;
 					if (repeat != #[1]) {
-						elem = repeat.collect{ arg r; (elem -> r) };
+						elem = repeat.collect{ arg r; if (r.isRest) { "Rest()" }{ elem } -> r.value };
 					};
 					dupl.do{ arg d;
-						arr = arr.add(elem -> (hold * d));
+						arr = arr.add(if (d.isRest) { "Rest()" }{ elem } -> (hold * d.value));
 					};
 				} {
 					Error("Invalid array entry: %".format(elem.cs)).throw;
@@ -2165,10 +2211,10 @@ BacalaoParser {
 				// if (verbose) { "Will parseArray recursively on %".format(subArr).postln };
 				subArrResult = this.parseArray(subArr);
 				if (repeat != #[1]) {
-					subArrResult = repeat.collect{ arg r; (subArrResult -> r) };
+					subArrResult = repeat.collect{ arg r; if (r.isRest) { "Rest()" }{ subArrResult } -> r.value };
 				};
 				dupl.do{ arg d;
-					arr = arr.add(subArrResult -> (hold * d));
+					arr = arr.add(if (d.isRest) { "Rest()" }{ subArrResult } -> (hold * d.value));
 				};
 			}
 		};

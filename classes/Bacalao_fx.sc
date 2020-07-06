@@ -55,11 +55,22 @@
 		}
 	}
 
+	// Nice, noisier analog-simulation LPF (DFM1)
+	fxLpfAnalog { arg lpf = 8000, filtRes = 0.95, filtPre = 1, filtNoise = 0.003;
+		^{ arg in;
+			var freq = \lpf.kr(lpf, 0.1);
+			var res = \filtRes.kr(filtRes, 0.1);
+			var inputgain = \filtPre.kr(filtPre, 0.1);
+			var noiselevel = \filtNoise.kr(filtNoise, 0.1);
+			DFM1.ar(in, freq, res, inputgain, 0, noiselevel)
+		}
+	}
+
 	fxBpf { arg bpf, bpq;
 		^{ arg in;
 			var freq = \bpf.kr(bpf, 0.1);
 			var bw = \bpq.kr(bpq, 0.1);
-			BBandPass.ar(in, freq, bw)
+			BBandPass.ar(in, freq, bw, /* volume compensation */ bw.max(0.001).reciprocal.sqrt.max(1))
 		}
 	}
 
@@ -68,6 +79,17 @@
 			var freq = \hpf.kr(hpf, 0.1);
 			var rq = \hpq.kr(hpq, 0.1);
 			BHiPass.ar(in, freq, rq)
+		}
+	}
+
+	// Nice, noisier analog-simulation HPF (DFM1)
+	fxHpfAnalog { arg hpf = 200, filtRes = 0.95, filtPre = 1, filtNoise = 0.003;
+		^{ arg in;
+			var freq = \hpf.kr(hpf, 0.1);
+			var res = \filtRes.kr(filtRes, 0.1);
+			var inputgain = \filtPre.kr(filtPre, 0.1);
+			var noiselevel = \filtNoise.kr(filtNoise, 0.1);
+			DFM1.ar(in, freq, res, inputgain, 1, noiselevel)
 		}
 	}
 
@@ -191,6 +213,14 @@
 		}
 	}
 
+	fxDistortCross { arg crossAmp = 0.5, crossSmooth = 0.5;
+		^{ arg in;
+			var amp = \crossAmp.kr(crossAmp, 0.1);
+			var smooth = \crossSmooth.kr(crossSmooth, 0.1);
+			CrossoverDistortion.ar(in, amp, smooth)
+		}
+	}
+
 	fxCrush { arg bits = 4;
 		// This version rounds to the square root of values, so
 		// more precision is given to quiet sounds, less to loud
@@ -222,6 +252,23 @@
 			Decimator.ar(in, sr, crushBits)
 		}
 	}
+
+	fxWaveLoss { arg lossDrop = 20, lossOutOf = 40;
+		^{ arg in;
+			var drop = \lossDrop.kr(lossDrop, 0.1);
+			var outof = \lossOutOf.kr(lossOutOf, 0.1);
+			WaveLoss.ar(in, drop, outof)
+		}
+	}
+
+	fxSquiz { arg squizRatio = 2, squizZeroCross = 1;
+		^{ arg in;
+			var pitchratio = \squizRatio.kr(squizRatio, 0.1).max(1);
+			var zcperchunk = \squizZeroCross.kr(squizZeroCross, 0.1).max(1);
+			Squiz.ar(in, pitchratio, zcperchunk, 0.2)
+		}
+	}
+
 
 	fxPitchShift { arg shiftSemi = -12, shiftWin = 0.2, shiftPitchDisp = 0.0, shiftTimeDisp = 0.0;
 		^{ arg in;

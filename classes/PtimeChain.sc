@@ -108,7 +108,7 @@ PtimeChain : Pattern {
 
 	storeOn { arg stream;
 		stream << "(";
-		patterns.do { |item,i|  if(i != 0) { stream << " <> " }; stream <<< item; };
+		patterns.do { |item,i|  if(i != 0) { stream << " << " }; stream <<< item; };
 		stream << ")"
 	}
 }

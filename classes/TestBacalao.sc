@@ -48,11 +48,11 @@ TestBacalao : UnitTest {
 		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single)");
 
 		str = "deg\"[0]\"";
-		expected = Pbind(\degree, 0, \dur, 1.0);
+		expected = Pbind(\degree, 0, \dur, Pn(1.0, 1));
 		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single array entry)");
 
 		str = "deg\"0@1\"";
-		expected = Pbind(\degree, 0, \dur, 1.0);
+		expected = Pbind(\degree, 0, \dur, Pn(1.0, 1));
 		this.assertEquals(parse.preProcess(str), expected.cs, "deg (single with duration)");
 
 		str = "freq\"Pgeom(100,1.5,4)\"";
@@ -91,27 +91,61 @@ TestBacalao : UnitTest {
 		this.compareEvents(this.prPat(str), expected, 31, "duplicated elements and arrays");
 
 		str = "deg\"1*(3,8,-1) [2 3]!(3,4,1)\"";
-		expected = Pbind(\degree, Pseq(1!3 ++ ([2, 3]!3).flat),
-			\dur, Pseq([0.05] ++ (0.075!2) ++ (0.1!2) ++ (0.2!2) ++ (0.1!2)));
-		this.compareEvents(this.prPat(str), expected, 10, "elements and arrays with Bjorklund sequences 1");
+		expected = Pbind(
+			\degree, Pseq([Rest(), 1, Rest(), Rest(), 1, Rest(), Rest(), 1] ++ [2, 3, 2, 3, Rest(), 2, 3]),
+			\dur, Pseq((0.025!8) ++ (0.1!4) ++ 0.2 ++ (0.1!2)));
+		this.compareEvents(this.prPat(str), expected, 16, "elements and arrays with Bjorklund sequences 1");
+
+		str = "deg\"1*(x3,8,-1) [2 3]!(x3,4,1)\"";
+		expected = Pbind(
+			\degree, Pseq([Rest(), 1, 1, 1] ++ [2, 3, 2, 3, 2, 3]),
+			\dur, Pseq([0.025, 0.075, 0.075, 0.025] ++ (0.1!2) ++ (0.2!2) ++ (0.1!2)));
+		this.compareEvents(this.prPat(str), expected, 16, "elements and arrays with Bjorklund sequences 1 (extending durations)");
 
 		str = "deg\"[1 [2 3]!(5,7)]\"";
-		expected = Pbind(\degree, Pseq([1] ++ ([2, 3]!5).flat),
-			\dur, Pseq([0.125] ++ (((0.125!2) ++ (0.0625!2))!2 ++ (0.0625!2)).flat));
+		expected = Pbind(
+			\degree, Pseq(([1] ++ [2, 3] ++ Rest() ++ ([2, 3]!2) ++ Rest() ++ ([2, 3]!2)).flat),
+			\dur, Pseq(([0.125] ++ (0.0625!2) ++ 0.125 ++ (0.0625!4) ++ 0.125 ++ (0.0625!4)).flat));
 		this.compareEvents(this.prPat(str), expected, 12, "elements and arrays with Bjorklund sequences 2");
 
-		str = "deg\"[1 [2 3]]*(2,5)@0.5!(3,4) 5\"";
-		expected = Pbind(\degree, Pseq(([1,2,3]!6).flat ++ 5),
-			\dur, Pseq([1, 1.5, 1, 1.5, 2, 3] *.x [2,1,1]/60  ++ (1/3)));
-		this.compareEvents(this.prPat(str), expected, 20, "elements and arrays with Bjorklund sequences 3");
+		str = "deg\"[1 [2 3]!(x5,7)]\"";
+		expected = Pbind(
+			\degree, Pseq(([1] ++ ([2, 3]!5)).flat),
+			\dur, Pseq(((0.125!3) ++ (0.0625!2) ++ (0.125!2) ++ (0.0625!4)).flat));
+		this.compareEvents(this.prPat(str), expected, 12, "elements and arrays with Bjorklund sequences 2 (extending durations)");
+
+		str = "deg\"[1 [2 3]]*(2,5)@0.5!(3,4,-1) 5\"";
+		expected = Pbind(
+			\degree, Pseq([Rest()] ++ (([1,2,3,Rest()]!2 ++ Rest())!3).flat ++ 5),
+			\dur, Pseq([1/6] ++ (([1,0.5,0.5,2]!2 ++ 2)!3/60).flat ++ (1/3)));
+		this.compareEvents(this.prPat(str), expected, 30, "elements and arrays with Bjorklund sequences 3");
+
+		str = "deg\"[1 [2 3]]*(x2,5)@0.5!(x3,4,-1) 5\"";
+		expected = Pbind(
+			\degree, Pseq([Rest()] ++ ([1,2,3]!6).flat ++ 5),
+			\dur, Pseq([1/6] ++ (([2,1,1, 3,1.5,1.5]!3).flat/60) ++ (1/3)));
+		this.compareEvents(this.prPat(str), expected, 30, "elements and arrays with Bjorklund sequences 3 (extending durations)");
 
 		str = "deg\"1 2 3 4 5 6 7 8\" << amp\"Pn(Pseries(0.1,0.1,3))\"";
 		expected = Pbind(\degree, Pseq((1..8)), \amp, Pn(Pseries(0.1,0.1,3)), \dur, 0.125);
 		this.compareEvents(this.prPat(str), expected, 9, "value Patterns in keys 1");
 
 		str = "deg\"[1 2 3 4]@2\" << amp\"Pn(Pseries(0.1,0.4,3))\" << bob\"Pgeom(1,10,inf)@1\"";
-		expected = Pbind(\degree, Pseq((1..4)), \amp, Pn(Pseries(0.1,0.4,3)), \bob, Pstutter(2, Pgeom(1,10,inf)), \dur, 0.5);
+		expected = Pbind(\degree, Pseq((1..4)), \amp, Pn(Pseries(0.1,0.4,3)), \bob, Pn(Pstutter(2, Pgeom(1,10,1))), \dur, 0.5);
 		this.compareEvents(this.prPat(str), expected, 5, "value Patterns in keys 2");
+
+		str = "deg\"[1 2 3 4]@2\" << amp\"Pn(Pseries(0.1,0.4,3))\" << bob\"Pgeom(1,10,inf)\"";
+		expected = Pbind(\degree, Pseq((1..4)), \amp, Pn(Pseries(0.1,0.4,3)), \bob, Pgeom(1,10,inf), \dur, 0.5);
+		this.compareEvents(this.prPat(str), expected, 5, "value Patterns in keys 3");
+
+		{
+			~geom = Pgeom(1,10,inf).asStream;
+			// (deg"[1 2 3 4]@2" << amp"Pn(Pseries(0.1,0.4,3))" << bob"geom*4@1").asStream.nextN(5, ()).do(_.postln)
+			// (deg"[1 2 3 4]@2" << amp"Pn(Pseries(0.1,0.4,3))" << bob"geom*2@1").asStream.nextN(5, ()).do(_.postln)
+			str = "deg\"[1 2 3 4]@2\" << amp\"Pn(Pseries(0.1,0.4,3))\" << bob\"geom*2@1\"";
+			expected = Pbind(\degree, Pseq((1..4)), \amp, Pn(Pseries(0.1,0.4,3)), \bob, Pseq([1,10], 2), \dur, 0.5);
+			this.compareEvents(this.prPat(str), expected, 5, "value Patterns in keys 4");
+		}.value;
 
 		str = "deg\"<0 <1,2>> <3 <4,5> 6>\"";
 		expected = Pbind('degree', Ppatlace([ Pseq([ 0, [ 1, 2 ] ], inf), Pseq([ 3, [ 4, 5 ], 6 ], inf) ], 6), 'dur', 0.5);
@@ -152,10 +186,17 @@ TestBacalao : UnitTest {
 		~bd = -1 * ~bd;
 		this.assertEquals(b.vars['bd'][2], 48, "Get/set using current Environment");
 
-		str = "note\"sd\"";
-		expected = Pbind(\note, ~sd);
-		this.assertEquals(parse.preProcess(str), expected.cs, "scalar variable");
-		this.compareEvents(this.prPat(str), expected, 5, "scalar variable");
+		{
+			var pat;
+			str = "note\"sd\"";
+			expected = Pbind(\note, ~sd);
+			this.assertEquals(parse.preProcess(str), expected.cs, "scalar variable - as string");
+			pat = this.prPat(str);
+			this.compareEvents(pat, expected, 5, "scalar variable - original");
+			// Change ~sd after resolving the pattern, to see if "dynamic" value is taken (or not, in this case)
+			~sd = ~sd + 1;
+			this.compareEvents(pat, expected, 5, "scalar variable - changed");
+		}.value;
 
 		str = "note\"sd:2\"";
 		expected = Pbind(\note, ~sd);
@@ -317,9 +358,7 @@ TestBacalao : UnitTest {
 
 		this.prParseAndCompareEvents("string pattern (single event w/dur)", "@~varied\"b@1\"", [
 			~varied.b.copy.dur = 1.0,
-			~varied.b.copy.dur = 1.0,
-			~varied.b.copy.dur = 1.0,
-			// forever
+			nil
 		]);
 
 		this.prParseAndCompareEvents("char pattern (single event)", "@~varied'd'", [
