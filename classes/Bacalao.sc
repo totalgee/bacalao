@@ -957,11 +957,11 @@ Bacalao {
 	}
 
 	vstPrintInstruments { arg onlyWithPresets = true, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
-		this.prVstPrint("VST Instruments", _.isSynth, onlyWithPresets, extraVstPluginSearchPath);
+		this.prVstPrint("VST Instruments", _.synth, onlyWithPresets, extraVstPluginSearchPath);
 	}
 
 	vstPrintEffects { arg onlyWithPresets = true, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
-		this.prVstPrint("VST Effects", _.isSynth.not, onlyWithPresets, extraVstPluginSearchPath);
+		this.prVstPrint("VST Effects", _.synth.not, onlyWithPresets, extraVstPluginSearchPath);
 	}
 
 
@@ -1021,7 +1021,7 @@ Bacalao {
 						} {
 							("Unable to open VST: " ++ vstName).error;
 						}
-					});
+					}, multiThreading: true);
 				});
 				server.listSendBundle(server.latency, bundle);
 			});
