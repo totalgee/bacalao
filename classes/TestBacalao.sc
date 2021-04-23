@@ -42,6 +42,8 @@ TestBacalao : UnitTest {
 		b.start;
 		this.compareEvents(this.prPat(str), expected, 5, "deg through Interpreter");
 		b.stop;
+		expected = [deg: str.drop(4).drop(-1)].tc;
+		this.compareEvents(this.prPat(str), expected, 5, "deg (alt notation)");
 
 		str = "deg\"0\"";
 		expected = Pbind(\degree, 0);
@@ -58,6 +60,8 @@ TestBacalao : UnitTest {
 		str = "freq\"Pgeom(100,1.5,4)\"";
 		expected = Pbind(\freq, Pgeom(100, 1.5, 4));
 		this.compareEvents(this.prPat(str), expected, 5, "freq Pgeom");
+		expected = [freq: Pgeom(100, 1.5, 4)].pb;
+		this.compareEvents(this.prPat(str), expected, 5, "freq Pgeom (alt notation)");
 
 		str = "deg\"1 ~ 3 ~\"";
 		expected = Pbind(\degree, Pseq([1, Rest(), 3, Rest()]), \dur, 1/4);
@@ -74,6 +78,8 @@ TestBacalao : UnitTest {
 		expected = Pbind(\degree, Pseq([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 7 ]),
 			\dur, Pseq([ 1/4, 1/8, 1/8, 1/8, 1/16, 1/16, 0.041666666666667, 0.041666666666667, 0.041666666666667, 1/8 ]));
 		this.compareEvents(this.prPat(str), expected, 11, "nested phrases");
+		expected = [deg: str.drop(4).drop(-1)].tc;
+		this.compareEvents(this.prPat(str), expected, 11, "nested phrases (alt notation)");
 
 		str = "deg\"0 1 <2 3> 4\"";
 		expected = Pbind(\degree, Ppatlace([ 0, 1, Pseq([2, 3], inf), 4 ], 2),
@@ -165,6 +171,8 @@ TestBacalao : UnitTest {
 		expected = Pbind('degree', Pseq([ 1, 0, 2, 0, 11, 0, 14, Rest(1) ], 1.0),
 			'dur', 0.125,
 			'amp', Pseq([0.9, 0.4, 0, 0.4, 0.1, 0.3, 0.7, 0.7], 1));
+		this.compareEvents(this.prPat(str), expected, 9, "char patterns");
+		expected = [deg: "bacalao ".chars, amp:"94041377".chars].tc;
 		this.compareEvents(this.prPat(str), expected, 9, "char patterns");
 
 		str = "deg\"[1 2 3]@2 |4 5| 6*3\"";
@@ -727,13 +735,13 @@ TestBacalao : UnitTest {
 		{
 			var expected = [
 				(degree: 0, dur: 0.25, beat: 0.0),
-				(degree: 1, dur: 0.25, beat: 1.0),
-				(degree: 2, dur: 0.25, beat: 2.0),
-				(degree: 3, dur: 0.25, beat: 3.0),
-				(degree: 5, dur: 0.25, beat: 4.0),
-				(degree: 1, dur: 0.25, beat: 5.0),
-				(degree: 2, dur: 0.25, beat: 6.0),
-				(degree: 3, dur: 0.25, beat: 7.0),
+				(degree: 1, dur: 0.25, beat: 0.25),
+				(degree: 2, dur: 0.25, beat: 0.5),
+				(degree: 3, dur: 0.25, beat: 0.75),
+				(degree: 5, dur: 0.25, beat: 1.0),
+				(degree: 1, dur: 0.25, beat: 1.25),
+				(degree: 2, dur: 0.25, beat: 1.5),
+				(degree: 3, dur: 0.25, beat: 1.75),
 				(degree: 0, dur: 0.25, beat: 0.0),
 			];
 			var events = this.prPlayAndGetEvents(b,
@@ -745,15 +753,15 @@ TestBacalao : UnitTest {
 		{
 			var expected = [
 				(degree: 0, dur: 0.25, beat: 0.0, amp: 0.9),
-				(degree: 1, dur: 0.25, beat: 1.0, amp: 0.7),
-				(degree: [2, 9], dur: 0.25, beat: 2.0, amp: 0.5),
-				(degree: 3, dur: 0.125, beat: 3.0, amp: 0.3),
-				(degree: 4, dur: 0.125, beat: 3.5, amp: 0.2),
-				(degree: 5, dur: 0.25, beat: 4.0, amp: 0.9),
-				(degree: 1, dur: 0.25, beat: 5.0, amp: 0.7),
-				(degree: [2, 9], dur: 0.25, beat: 6.0, amp: 0.5),
-				(degree: 3, dur: 0.125, beat: 7.0, amp: 0.3),
-				(degree: 4, dur: 0.125, beat: 7.5, amp: 0.2),
+				(degree: 1, dur: 0.25, beat: 0.25, amp: 0.7),
+				(degree: [2, 9], dur: 0.25, beat: 0.5, amp: 0.5),
+				(degree: 3, dur: 0.125, beat: 0.75, amp: 0.3),
+				(degree: 4, dur: 0.125, beat: 0.875, amp: 0.2),
+				(degree: 5, dur: 0.25, beat: 1.0, amp: 0.9),
+				(degree: 1, dur: 0.25, beat: 1.25, amp: 0.7),
+				(degree: [2, 9], dur: 0.25, beat: 1.5, amp: 0.5),
+				(degree: 3, dur: 0.125, beat: 1.75, amp: 0.3),
+				(degree: 4, dur: 0.125, beat: 1.875, amp: 0.2),
 				(degree: 0, dur: 0.25, beat: 0.0, amp: 0.9),
 			];
 			var events = this.prPlayAndGetEvents(b,
@@ -764,10 +772,23 @@ TestBacalao : UnitTest {
 
 		{
 			var expected = [
+				(midinote: 60, dur: 0.25, beat: 0.0, amp: 0.7),
+				(midinote: 60, dur: 0.25, beat: 1.0, amp: 0.1),
+				(midinote: 50, dur: 0.25, beat: 2.0, amp: 0.1),
+				(midinote: 50, dur: 0.25, beat: 3.0, amp: 0.1),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				[mn: "60*2 50*2", amp: "0.7 0.1!3"].tc.slow(4),
+				expected.size, #[\midinote, \dur, \beat, \amp]);
+			this.assertEquals(events, expected, "time chaining 2");
+		}.value;
+
+		{
+			var expected = [
 				(midinote: 36, dur: 0.25, beat: 0.0),
-				(midinote: 47, dur: 0.25, beat: 1.0),
-				(midinote: 49, dur: 0.25, beat: 2.0),
-				(midinote: [63, 51], dur: 0.25, beat: 3.0),
+				(midinote: 47, dur: 0.25, beat: 0.25),
+				(midinote: 49, dur: 0.25, beat: 0.5),
+				(midinote: [63, 51], dur: 0.25, beat: 0.75),
 				(midinote: 36, dur: 0.25, beat: 0.0),
 			];
 			var events = this.prPlayAndGetEvents(b,
@@ -790,8 +811,8 @@ TestBacalao : UnitTest {
 		if (\ChordSymbol.asClass.notNil) {
 			var expected = [
 				(degree: 0, dur: 0.25, beat: 0.0),
-				(degree: 0, dur: 0.25, beat: 1.0),
-				(degree: [6, 7, 9, 11], dur: 0.5, beat: 2.0),
+				(degree: 0, dur: 0.25, beat: 0.25),
+				(degree: [6, 7, 9, 11], dur: 0.5, beat: 0.5),
 				(degree: 0, dur: 0.25, beat: 0.0),
 			];
 			var events = this.prPlayAndGetEvents(b,
@@ -801,8 +822,8 @@ TestBacalao : UnitTest {
 
 			expected = [
 				(midinote: 60, dur: 0.25, beat: 0.0),
-				(midinote: 60, dur: 0.25, beat: 1.0),
-				(midinote: [71, 72, 76, 79], dur: 0.5, beat: 2.0),
+				(midinote: 60, dur: 0.25, beat: 0.25),
+				(midinote: [71, 72, 76, 79], dur: 0.5, beat: 0.5),
 				(midinote: 60, dur: 0.25, beat: 0.0),
 			];
 			events = this.prPlayAndGetEvents(b,
@@ -869,9 +890,28 @@ TestBacalao : UnitTest {
 			// (Need to add the stretch key, because we don't use Event.default
 			// in prPlayAndGetEvents, so it's not defined for _.fast to be applied)
 			events = this.prPlayAndGetEvents(b,
-				(this.prPat("deg\"0 [2 3]\"") <> (stretch:1)).whenmod(5, 3, _.reverse(1) <> _.fast),
+				this.prPat("deg\"0 [2 3]\"").whenmod(5, 3, _.reverse(1) <> _.fast),
 				expected.size, #[\degree, \dur], quant: 5);
 			this.assertEquals(events, expected, "whenmod - function");
+		}.value;
+
+		{
+			var dur = 1/8;
+			var p = Pbind(\degree, Pseq((0..7)), \dur, dur).swing(8, 0.25);
+			var expected = [
+				(degree: 0, dur: dur, timingOffset: 0),
+				(degree: 1, dur: dur, timingOffset: 0.125/4),
+				(degree: 2, dur: dur, timingOffset: 0),
+				(degree: 3, dur: dur, timingOffset: 0.125/4),
+				(degree: 4, dur: dur, timingOffset: 0),
+				(degree: 5, dur: dur, timingOffset: 0.125/4),
+				(degree: 6, dur: dur, timingOffset: 0),
+				(degree: 7, dur: dur, timingOffset: 0.125/4),
+			];
+			var events = this.prPlayAndGetEvents(b,
+				p,
+				expected.size, #[\degree, \dur, \timingOffset]);
+			this.assertEquals(events, expected, "swing");
 		}.value;
 
 	}

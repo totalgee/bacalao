@@ -108,6 +108,8 @@ b.clear(b.trks, 8);
 
 CLASSMETHODS::
 
+private:: config, prAmbisonicInstalled, prSetupEventTypes, prSetupInstrumentSynths, prSetupSynthDefs, prVSTPluginInstalled, initClass
+
 METHOD:: new
 Create a Bacalao instance, to which live coding commands can be
 issued.
@@ -130,43 +132,530 @@ argument:: quant
 What clock quantization should track patterns use when not specified explicitly?
 Default value (if not specified) is nil.
 
+METHOD:: varPrint
+
+METHOD:: vars
+
+METHOD:: varSet
+argument:: key
+argument:: values
+
+METHOD:: preProcessorVariables
+
+METHOD:: clockWindow
+argument:: server
+
+METHOD:: setDictChars
+argument:: dict
+argument:: start
+argument:: end
+argument:: remapFunc
+
+METHOD:: varLookup
+argument:: key
+argument:: dict
+
+
 INSTANCEMETHODS::
 
-METHOD:: p
+private:: prChangePattern, prClear, prClearOtherPatternSlots, prCreateSpatialSource, prFade, prFree, prGetControlValue, prGetNamesAndProxies, prGetPdefName, prGetPdefSlots, prMakeVariableName, prPrintInColumns, prRemoveUnusedPatternSlots, prSetSource, prSetupCmdPeriod, prSetupSpatialSynths, prVstPrint, prVstRead
 
-Make a named track pattern, using an Event pattern. The 'p' could be
-considered "pattern" or "play". Sets a looping pattern playing on the
-named NodeProxy.
 
+
+subsection::The environment (Servers, variables and clocks)
+
+METHOD:: tempo
+argument:: t
+argument:: setVstTempo
+
+METHOD:: server
+
+METHOD:: start
+
+METHOD:: stop
+
+METHOD:: defGet
 argument:: trkName
-A name/label for the track. If not a link::Classes/Symbol::, it will
-be converted to one. An link::Classes/Association:: may be used, in the form
-code::trkName -> sourceIndex::. This will apply the definition to that
-(integer) sub-source index. If no sourceIndex is specified, then the main
-(0) source will be set, and all other sub-sources will be removed.
 
-argument:: pattern
-The Event pattern (link::Classes/Pbind::) to play. Typically this will be
-created by several patterns joined by link::Classes/PtimeChain:: or
-link::Classes/Pchain::. Sending nil as the pattern stops playback of
-the named track/slot.
+METHOD:: defSet
+argument:: trkName
+argument:: patternPairs
 
-argument:: dur
-Optional duration (defaults to 0) for the pattern.
-Duration of 0 means use "natural" loop time; whatever the pattern produces.
-Durations > 0 will truncate or extend the pattern as needed to produce
-exactly the requested duration. By default (if quant is unspecified) the
-quantization will be a multiple of the duration ([dur, 0]).
+METHOD:: defAdd
+argument:: trkName
+argument:: patternPairs
 
+METHOD:: clock
+
+METHOD:: varSet
+argument:: key
+argument:: values
+
+METHOD:: varLookup
+argument:: key
+argument:: dict
+
+METHOD:: sched
+argument:: event
 argument:: quant
-The optional link::Classes/Quant:: to use. This is useful if you want to
-start the pattern on an off-beat: for example, you might set quant to [4,-1],
-which would start the pattern one bar before the next bar divisible by four.
 
+METHOD:: boot
+
+METHOD:: push
+
+METHOD:: pop
+
+METHOD:: vars
+
+METHOD:: verbose
+
+METHOD:: quant
+
+
+
+subsection::Playing patterns on tracks
+
+METHOD:: p
+	Make a named track pattern, using an Event pattern. The 'p' could be
+	considered "pattern" or "play". Sets a looping pattern playing on the
+	named NodeProxy.
+argument:: trkName
+	A name/label for the track. If not a link::Classes/Symbol::, it will
+	be converted to one. An link::Classes/Association:: may be used, in the form
+	code::trkName -> sourceIndex::. This will apply the pattern definition to the
+	given (integer) sub-source index. If no sourceIndex is specified, then the
+	main (0) source will be set, and all other sub-sources will be removed. If
+	you wish to modify the main source without removing other sub-sources,
+	specify it explicitly as code::trkName -> 0::.
+argument:: pattern
+	The Event pattern (link::Classes/Pbind::) to play. Typically this will be
+	created by several patterns joined by link::Classes/PtimeChain:: or
+	link::Classes/Pchain::. Sending nil as the pattern stops playback of
+	the named track/slot.
+argument:: dur
+	Optional duration (defaults to 0) for the pattern.
+	Duration of 0 means use "natural" loop time; whatever the pattern produces.
+	Durations > 0 will truncate or extend the pattern as needed to produce
+	exactly the requested duration. By default (if quant is unspecified) the
+	quantization will be a multiple of the duration ([dur, 0]). These duration
+	is interpreted as strong::bars::, not beats.
+argument:: quant
+	The optional link::Classes/Quant:: to use. This is useful if you want to
+	start the pattern on an off-beat: for example, you might set quant to [4,-1],
+	which would start the pattern one bar before the next bar divisible by four.
+	Note that with Bacalao patterns, the quant is interpreted in strong::bars::
+	rather than beats.
 argument:: role
-The optional link::Reference/NodeProxy_roles##NodeProxy role:: to use.
-This can be set automatically for you if you use the synonym methods
-link::#-pset:: or link::#-xset::.
+	The optional link::Reference/NodeProxy_roles##NodeProxy role:: to use.
+	This will be set automatically for you if you use the synonym methods
+	link::#-pset:: or link::#-xset:: instead of link::#-p::.
+argument:: includeMask
+	When true (the default), set default "mask" key to 1, so we can use
+	it for triggering with pset (the "mask" Event key goes to 0/Rest when using
+	link::Classes/PmaskBjork:: or link::Classes/Pattern#-degrade:: degrade).
+
+METHOD:: once
+argument:: trkName
+argument:: pattern
+argument:: quant
+
+METHOD:: trks
+
+METHOD:: free
+argument:: trkNameOrNames
+argument:: fadeTime
+
+METHOD:: trkDefaults
+
+METHOD:: pset
+argument:: trkName
+argument:: pattern
+argument:: dur
+argument:: quant
+argument:: includeMask
+
+METHOD:: psetRole
+argument:: trkName
+argument:: pattern
+argument:: dur
+argument:: quant
+
+METHOD:: xsetRole
+argument:: trkName
+argument:: pattern
+argument:: dur
+argument:: quant
+
+METHOD:: hush
+argument:: fadeTime
+
+METHOD:: clear
+argument:: trkNameOrNames
+argument:: fadeTime
+
+METHOD:: get
+argument:: trkName
+argument:: controlName
+argument:: valueOrFunc
+argument:: fadeTime
+
+METHOD:: set
+argument:: trkName
+argument:: controlName
+argument:: valueOrFunc
+argument:: fadeTime
+
+METHOD:: db
+argument:: trkName
+argument:: db
+argument:: fadeTime
+
+METHOD:: proxy
+argument:: trkName
+
+METHOD:: removeSlots
+argument:: trkName
+argument:: indices
+
+
+
+
+subsection::Working with samples and buffers
+
+METHOD:: loadSamples
+argument:: dirPath
+argument:: name
+argument:: replace
+
+METHOD:: chop
+argument:: bufOrName
+argument:: pieces
+argument:: desiredBars
+argument:: desiredRate
+argument:: inst
+
+METHOD:: loadBuffer
+argument:: filePath
+argument:: name
+argument:: replace
+
+
+
+subsection::VST Plugins
+
+METHOD:: vstBankProgram
+argument:: trkName
+argument:: bank
+argument:: program
+argument:: quant
+
+METHOD:: vstClearAll
+argument:: fadeTime
+
+METHOD:: vst
+argument:: trkName
+
+METHOD:: vstInit
+argument:: trkName
+argument:: vstName
+argument:: programPath
+argument:: bankAndProgram
+argument:: extraVstPluginSearchPath
+
+METHOD:: vstPrintEffects
+argument:: onlyWithPresets
+argument:: extraVstPluginSearchPath
+
+METHOD:: vget
+argument:: trkName
+argument:: vstControlName
+
+METHOD:: vset
+argument:: trkName
+argument:: controlName
+argument:: value
+argument:: fadeTime
+
+METHOD:: vstPrintInstruments
+argument:: onlyWithPresets
+argument:: extraVstPluginSearchPath
+
+METHOD:: vstFreeAll
+argument:: fadeTime
+
+METHOD:: vstDict
+
+METHOD:: vstRead
+argument:: trkName
+argument:: programPath
+
+METHOD:: vstPresetDir
+argument:: trkName
+argument:: type
+
+
+
+subsection::User interfaces
+
+METHOD:: dropGui
+
+METHOD:: keyboard
+argument:: trk
+
+METHOD:: gui
+
+METHOD:: clockWindow
+
+METHOD:: showTree
+
+
+
+subsection::Querying and printing things
+
+METHOD:: printSynthControls
+argument:: synthName
+
+METHOD:: printSynths
+
+METHOD:: varPrint
+
+
+
+subsection::Effects
+
+METHOD:: fx
+	Set an effect (filter function) on the specified slot for a track.
+	You may use any of the predefined effects, such as
+	link::#fxDelayDub::, or any function that takes an strong::in::
+	argument and returns a UGen. See the
+	link::Reference/NodeProxy_roles##\filter:: role.
+	code::
+	b = Bacalao().boot.tempo_(2);
+	b.p(1, deg"0 1 2 3");
+	b.fx(1->10, b.fxLpf(300, 0.2));
+	b.fx(1->20, { |in| (in*20).tanh * 0.2 }, 0.2);
+	::
+	You may also compose these functions (within a single slot),
+	using the usual operators (in this case, read right to left,
+	in other words, the "crush" is applied first, then the "delay dub".
+	code::
+	b.fx(1->30, b.fxDelayDub(0.75, 0.7) <> b.fxCrush(4), 0.2);
+	::
+argument:: trkNameAndIndex
+	The name of the track and index where to apply an effect. It
+	must be an link::classes/Association:: with the track name
+	as key, followed by the slot index as value (e.g. code::1->10::).
+	You are not allowed to set an effect on slot 0 (the primary slot).
+argument:: filterFunc
+	The filter function to apply. It must take one argument (strong::in::)
+	and return a UGen.
+argument:: wet
+	How much to mix the effect on this slot with the existing signal.
+	Wetness of 0 (dry) means no effect, and 1 is fully "wet". You may
+	adjust or animate the wetness control after the effect is applied,
+	its name will be code::\wet10:: (the number after code::wet:: will
+	be the slot index.
+
+METHOD:: fxPrintControls
+	Print the list of all slots for a track (typically the first (0)
+	slot has a playing pattern or Synth, and subsequent slots are
+	effects/filters). For each slot, it prints the list of available
+	link::classes/NamedControl:: and their current values (or default
+	values, if they've never been set).
+	code::
+	b.fxPrintControls(1);
+	// (prints the following)
+	
+	// === Slot 0 (PatternControl)
+	// === Slot 10 (wet10 = 1)
+	//    lpf = (default: 300)
+	//    lpq = (default: 0.2)
+	//=== Slot 20 (wet20 = 0.2)
+	//=== Slot 30 (wet30 = 0.2)
+	//    bits = (default: 4)
+	//    delayPre = (default: 1)
+	//    delWobble = (default: 0.002)
+	//    delTime = (default: 0.375)
+	//    delFb = (default: 0.7)
+	//    delNoise = (default: 0)
+	//    delHpf = (default: 400)
+	//    delLpf = (default: 5000)
+	::
+argument:: trkNameAndIndex
+	The name of the track for which to print the controls (e.g.
+	code::1::), or an link::classes/Association:: with the track name
+	as key, followed by the slot index as value (e.g. code::1->10::).
+
+METHOD:: fxDry
+	Set all the effect slots on a track to be dry (does not removeSlots
+	the effects, simply "switches them off").
+	code::
+	b.fxDry(1, 5);
+	
+	// Now, turn one of the effects back on:
+	b.set(1, \wet30, 0.5, 2)
+	::
+argument:: trkName
+	The name of the track to adjust.
+argument:: fadeTime
+	The length of time it should take to turn off the effect.
+
+METHOD:: fxClear
+	Remove all effect slots for a track.
+	code::
+	b.fxClear(1);
+	
+	// Now, we can see the effect slots were removed:
+	b.fxPrintControls(1);
+	// (only prints the following)
+	
+	// === Slot 0 (PatternControl)
+	::
+argument:: trkName
+	The name of the track to adjust.
+argument:: fadeTime
+	The length of time it should take to turn off the effects.
+
+
+
+subsection::Effect filter (FX) library
+
+METHOD:: fxDelay
+argument:: delayBeats
+argument:: decayBeats
+
+METHOD:: fxFlange
+argument:: flanRate
+argument:: flanDepth
+argument:: flanFb
+
+METHOD:: fxCrush
+argument:: bits
+
+METHOD:: fxHpf
+argument:: hpf
+argument:: hpq
+
+METHOD:: fxCompress
+argument:: compThresh
+argument:: compRatio
+argument:: compClamp
+argument:: compRelax
+
+METHOD:: fxLpfAnalog
+argument:: lpf
+argument:: filtRes
+argument:: filtPre
+argument:: filtNoise
+
+METHOD:: fxDelayDub
+argument:: delBeats
+argument:: delFb
+argument:: delWobble
+argument:: noiseLevel
+
+METHOD:: fxDownsample
+argument:: sampleRate
+
+METHOD:: fxLimit
+argument:: limitLevel
+argument:: limitDur
+
+METHOD:: fxVibrato
+argument:: vibRate
+argument:: vibDepth
+
+METHOD:: fxHpfAnalog
+argument:: hpf
+argument:: filtRes
+argument:: filtPre
+argument:: filtNoise
+
+METHOD:: fxSquiz
+argument:: squizRatio
+argument:: squizZeroCross
+
+METHOD:: fxCrushHard
+argument:: bits
+
+METHOD:: fxPitchShift
+argument:: shiftSemi
+argument:: shiftWin
+argument:: shiftPitchDisp
+argument:: shiftTimeDisp
+
+METHOD:: fxGate
+argument:: gateBeatFreq
+argument:: gatePhase
+argument:: gateWidth
+argument:: gateLag
+
+METHOD:: fxDecimate
+argument:: sampleRate
+argument:: bits
+
+METHOD:: fxDistortCross
+argument:: crossAmp
+argument:: crossSmooth
+
+METHOD:: fxVerbLite
+argument:: t60
+argument:: stereo
+
+METHOD:: fxDelayPingPong
+argument:: delBeats
+argument:: delFb
+argument:: delWobble
+argument:: noiseLevel
+
+METHOD:: fxBpf
+argument:: bpf
+argument:: bpq
+
+METHOD:: fxDistort
+argument:: gainIn
+argument:: gainOut
+
+METHOD:: fxTremolo
+argument:: tremRate
+argument:: tremDepth
+
+METHOD:: fxWaveLoss
+argument:: lossDrop
+argument:: lossOutOf
+
+METHOD:: fxLpf
+argument:: lpf
+argument:: lpq
+
+METHOD:: fxVerb
+argument:: t60
+argument:: damp
+
+
+
+subsection::Spatialization (binaural sound, ambisonics)
+
+METHOD:: spatialInit
+argument:: hoaOrder
+
+METHOD:: spatialize
+argument:: trkName
+argument:: stereo
+argument:: azDeg
+argument:: elevDeg
+argument:: radius
+argument:: widthDeg
+
+METHOD:: despatialize
+argument:: trkName
+argument:: playDefault
+
+METHOD:: spatial
+
+METHOD:: spatialFree
+argument:: playDefault
+
 
 
 EXAMPLES::

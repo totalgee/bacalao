@@ -170,7 +170,7 @@ PnsymRest : Psym {
 
 	lookUp { arg key;
 		key = key.asSymbol;
-		if (key == ' ' or: { key == '~' }) {
+		if (key == ' ' or: { key == '~' } or: { key == 'Rest()' }) {
 			// Return Rest without complaining
 			^this.rest
 		} {
@@ -258,6 +258,54 @@ Psync2 : FilterPattern {
 	}
 }
 
+PmulOrSet : Pset {
+	filterEvent { arg event, val;
+		var existingVal = event[name];
+		^event[name] = if (existingVal.isNil) {
+			val
+		} {
+			existingVal * val
+		};
+	}
+}
+
++String {
+	chars {
+		^this.as(Array)
+	}
+}
+
++Array {
+	pseq { arg repeats=1, offset=0;
+		^Pseq(this, repeats, offset)
+	}
+
+	loop {
+		^Pseq(this, inf)
+	}
+
+	pb {
+		var expandedKeys = this.clump(2).collect{ arg pair;
+			BacalaoParser.prResolvePatternSyntax(pair);
+		}.flatten;
+		^Pbind(*expandedKeys)
+	}
+
+	tc {
+		var timeChainArgs = this.separate{ arg a, b;
+			PtimeChain.isValidArg(a)
+		}.collect(_.clump(2)).flatten.collect{ arg x;
+			if (x.size == 2) {
+				Pbind(*BacalaoParser.prResolvePatternSyntax(x));
+			} {
+				if (x.size != 1) { Error("Expected single element in tc").throw };
+				x[0]
+			}
+		};
+		^PtimeChain(*timeChainArgs)
+	}
+}
+
 +Pattern {
 
 	scramble { arg randSeed, dur;
@@ -272,6 +320,29 @@ Psync2 : FilterPattern {
 	rand { arg randSeed, dur;
 		var arrayRandFunc = { arg x; Array.fill(x.size, { x.choose} ) };
 		var p = Parrop(this, arrayRandFunc, dur);
+		^if (randSeed.notNil) {
+			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(randSeed, p) }
+		} {
+			p
+		}
+	}
+
+	randSwap { arg numSwaps, adjacent = true, randSeed, dur;
+		var arrayRandSwapFunc = { arg arr;
+			if (arr.size > 1) {
+				numSwaps.do {
+					var i = arr.size.rand;
+					var j = if (adjacent) { i + 1 } { i };
+					if (j == arr.size) { j = arr.size - 2 };
+					while { i == j } {
+						j = arr.size.rand;
+					};
+					arr.swap(i, j)
+				};
+			};
+			arr
+		};
+		var p = Parrop(this, arrayRandSwapFunc, dur);
 		^if (randSeed.notNil) {
 			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(randSeed, p) }
 		} {
@@ -323,11 +394,26 @@ Psync2 : FilterPattern {
 	}
 
 	fast { arg rate = 2;
-		^Pmul(\stretch, rate.reciprocal, this);
+		// Pstretch might be used; there are pros and cons,
+		// but in general this "plays nicer" with PtimeChain.
+		^PmulOrSet(\stretch, rate.reciprocal, this);
 	}
 
 	slow { arg rate = 2;
-		^Pmul(\stretch, rate, this);
+		// Pstretch might be used; there are pros and cons,
+		// but in general this "plays nicer" with PtimeChain.
+		^PmulOrSet(\stretch, rate, this);
+	}
+
+	swing { arg stepsInBar = 8, amt = 0.25, reverse = false;
+		var func = Pfunc{
+			var clk = thisThread.clock;
+			var fractInBar = clk.beatInBar / clk.beatsPerBar;
+			var offset = (fractInBar * stepsInBar).floor + reverse.if(1,0) % 2;
+			var toff = [0, stepsInBar.reciprocal * clk.beatsPerBar * amt][offset];
+			toff
+		};
+		^Padd(\timingOffset, func, this)
 	}
 
 	// Modify an Event Pattern to return Rests based on a weighted coin toss
@@ -384,20 +470,24 @@ Psync2 : FilterPattern {
 		// ^Pswitch1([this, alternate], Pfunc{ thisThread.clock.bar - offset % nBars >= startBar })
 	}
 
-	// This doesn't work the same way as TidalCycles' version...
-	// The patterns advance bit by bit, according to the coin
-	// toss, so they get out of sync.
-	// (but it's still fun to play with)
-	// Compare the behaviour of these two different examples:
-	// b.p(1, deg"0 1 2 3".repeat.rarely(_.add(\degree, 7)))
+	// This was fixed to work more like TidalCycles' version...
+	// The patterns advance together, so they don't get out of
+	// sync.
+	// These should sound the same:
+	// b.p(1, deg"0 1 2 3".rarely(_.add(\degree, 7)))
 	// b.p(1, deg"0 1 2 3".add(\degree, Pwrand([0, 7], [0.75, 0.25], inf)))
+	// But it can cause weirdness if you use an alternate pattern
+	// (rather than function) and the number of notes is different
+	// in this vs the alternate.
 	sometimesBy { arg prob, funcOrAlternatePattern;
 		var alternate = if (funcOrAlternatePattern.isKindOf(Function)) {
 			funcOrAlternatePattern.(this)
 		} {
 			funcOrAlternatePattern
 		};
-		^Pif( Pfunc{ prob.coin }, alternate, this);
+		^Preduce({ |x,y| if (prob.coin, x, y) }, alternate, this);
+		// Old version, that allowed patterns to get out of phase
+		// ^Pif( Pfunc{ prob.coin }, alternate, this);
 	}
 
 	always { arg funcOrAlternatePattern;

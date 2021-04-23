@@ -4,11 +4,15 @@ PtimeChain : Pattern {
 
 	*new { arg ... patterns;
 		patterns.do{ arg p;
-			if (p.isKindOf(Pattern).not and: { p.isKindOf(Event).not }) {
+			if (PtimeChain.isValidArg(p).not) {
 				Error("PtimeChain requires Event Patterns or Events").throw
 			}
 		};
 		^super.newCopyArgs(patterns);
+	}
+
+	*isValidArg { arg p;
+		^p.isKindOf(Pattern) or: { p.isKindOf(Event) }
 	}
 
 	<< { arg aPattern;

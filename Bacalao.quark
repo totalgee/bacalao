@@ -1,4 +1,4 @@
-var deps = [ "wslib", "Bjorklund", "SafetyNet" ];
+var deps = [ "wslib", "Bjorklund", "SafetyNet", "SimplexNoise-SC", "ClockFace" ];
 
 (
           \name: "Bacalao",
@@ -6,7 +6,7 @@ var deps = [ "wslib", "Bjorklund", "SafetyNet" ];
         \author: "Glen Fraser",
      \copyright: "Glen Fraser, 2019-2020",
        \license: "GPL",
-       \version: "0.8.31",
+       \version: "1.4.23",
         \schelp: "Classes/Bacalao",
            \url: "https://github.com/totalgee/bacalao",
   \dependencies: deps,

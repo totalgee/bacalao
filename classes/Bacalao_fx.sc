@@ -47,7 +47,31 @@
 	}
 
 	// Some predefined effects can can be used with b.fx
-	fxLpf { arg lpf, lpq;
+	fxPanAz { arg azimDeg = 0, width = 45;
+		^{ arg in;
+			var az = (\panAzim.kr(azimDeg, 0.1) / 180).circleRamp(0.1,-1,1);
+			var w = \panWidth.kr(width, 0.1) / 180;
+			PanAz.ar(numChannels, in[0..1], [-0.5,0.5] * w + az, orientation: 0).sum
+		}
+	}
+
+	// Buffers should be an array of L/R pairs of Buffers, matching the number
+	// of channels being used by Bacalao (b.numChannels).
+	// For example, for an 8-output system with the speakers arranged in
+	// a regular octagon, you might use HRTF buffers representing the impulse
+	// response at 0, 45, 90, ..., 270, 315 degree azimuths.
+	fxBinaural { arg bufPairs;
+		^{ arg in;
+			if (bufPairs.size != numChannels) {
+				Error("bufPairs must be an Array of size %, containing pairs of Buffers".format(numChannels)).throw;
+			};
+			bufPairs.collect{ arg bufPair, i;
+				Convolution2.ar(in[i], bufPair, 0, (bufPair[0].numFrames/2-1).nextPowerOfTwo);
+			}.sum * bufPairs.size.sqrt.reciprocal;
+		}
+	}
+
+	fxLpf { arg lpf = 1200, lpq = 1;
 		^{ arg in;
 			var freq = \lpf.kr(lpf, 0.1);
 			var rq = \lpq.kr(lpq, 0.1);
@@ -66,7 +90,7 @@
 		}
 	}
 
-	fxBpf { arg bpf, bpq;
+	fxBpf { arg bpf = 1200, bpq = 1;
 		^{ arg in;
 			var freq = \bpf.kr(bpf, 0.1);
 			var bw = \bpq.kr(bpq, 0.1);
@@ -74,7 +98,7 @@
 		}
 	}
 
-	fxHpf { arg hpf, hpq;
+	fxHpf { arg hpf = 1200, hpq = 1;
 		^{ arg in;
 			var freq = \hpf.kr(hpf, 0.1);
 			var rq = \hpq.kr(hpq, 0.1);
@@ -98,7 +122,9 @@
 			var verbPre = \verbPre.kr(1, 0.05);
 			t60 = \t60.kr(t60, 0.1);
 			damp = \damp.kr(damp, 0.1);
-			JPverb.ar(in * verbPre, t60, damp)
+			in.clump(2).collect{ arg pair;
+				JPverb.ar(pair * verbPre, t60, damp)
+			}.flatten
 		}
 	}
 
@@ -107,7 +133,9 @@
 			var verbPre = \verbPre.kr(1, 0.05);
 			t60 = \t60.kr(t60, 0.1);
 			stereo = \stereo.kr(stereo, 0.1);
-			NHHall.ar(in * verbPre, t60, stereo)
+			in.clump(2).collect{ arg pair;
+				NHHall.ar(pair * verbPre, t60, stereo)
+			}.flatten
 		}
 	}
 
@@ -154,9 +182,7 @@
 			local = { arg sig;
 				var left, right;
 				sig = sig*fb + (in * delayPre);
-				if (noiseLevel > 0) {
-					sig = sig * LPF.ar(WhiteNoise.ar(noiseLevel!numChans, 1), 1200);
-				};
+				sig = sig * LPF.ar(WhiteNoise.ar(noise!numChans, 1), 1200);
 				sig = HPF.ar(sig, delHpf);
 				sig = LPF.ar(sig, delLpf);
 				sig = sig.tanh;

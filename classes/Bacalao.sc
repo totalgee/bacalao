@@ -1,11 +1,12 @@
 Bacalao {
 	classvar parse;
-	const numChannels = 2;
+	const numVstChannels = 2;
 	classvar <preProcessorVariables = 'bacalaoPreProcessorVariables';
 	var <clock;
 	var <server;
 	var <>verbose = true;
 	var <quant;
+	var <numChannels = 2;
 	// Collection of 2-element Arrays [VSTPluginController, NodeProxy], looked up by "name" (a Symbol)
 	var <vstDict;
 	// Dictionary of default Event properties per track
@@ -13,12 +14,14 @@ Bacalao {
 	// set global defaults, shared by all trks.
 	var <trkDefaults;
 	var <spatial; // Settings for spatialization (BacalaoSpatialSettings)
+	var <outputGroup; // The Group for the "output fx" Proxy
+	var <barClock; // A clock derived from the main clock, one beat per bar (so we can schedule bar-length patterns without stretching)
 
 	*initClass {
 		parse = BacalaoParser;
 	}
 
-	*new { arg shareClock, server, verbose, quant;
+	*new { arg shareClock, server, verbose, quant, numChannels;
 		var clock;
 
 		case
@@ -26,6 +29,7 @@ Bacalao {
 		{ shareClock.isKindOf(Clock) } { clock = shareClock }
 		{ clock = TempoClock.default };
 
+		numChannels = numChannels ? 2;
 		clock.permanent = true;
 		MIDIClient.init(verbose: false);
 
@@ -40,9 +44,10 @@ Bacalao {
 		server = server ? Server.default;
 		server.options.memSize = max(server.options.memSize, 128 * 1024);
 		server.recorder.recBufSize = (server.sampleRate ?? { server.options.sampleRate ? 44100 } * 10).nextPowerOfTwo;
+		server.options.numOutputBusChannels = max(server.options.numOutputBusChannels, numChannels);
 
 		Bacalao.config();
-		^super.newCopyArgs(clock, server, verbose ? true, quant, (), (), nil).start.prSetupCmdPeriod.push;
+		^super.newCopyArgs(clock, server, verbose ? true, quant, numChannels, (), (), nil).start.prSetupCmdPeriod.prSetupBarClock.push;
 	}
 
 	*config {
@@ -197,7 +202,7 @@ Bacalao {
 		if (this.prVSTPluginInstalled) {
 			SynthDef(\bacalao_vsti, {arg out = 0, pan = 0, gate=1, fadeTime=1, bypass=0;
 				// VST instruments usually don't have inputs
-				var vsti = VSTPlugin.ar(nil, numChannels, bypass: bypass);
+				var vsti = VSTPlugin.ar(nil, numVstChannels, bypass: bypass);
 				var env = EnvGen.kr(Env.asr(fadeTime,1,fadeTime), gate, doneAction: Done.freeSelf);
 				Out.ar(out, Balance2.ar(vsti.first, vsti.last, pan) * env);
 			}).add;
@@ -563,6 +568,43 @@ Bacalao {
 		}
 	}
 
+	prResetBarClockTempo {
+		barClock.tempo = clock.tempo / clock.beatsPerBar;
+	}
+
+	prSyncBarClockMeterAndBeats {
+		barClock.schedAbs(barClock.beats.ceil, {
+			// Resetting meter
+			barClock.beatsPerBar = 1;
+			barClock.beats = barClock.bars2beats(clock.beats2bars(clock.beats));
+		});
+	}
+
+	prSyncBarClock {
+		clock.schedAbs(clock.nextBar, {
+			this.prResetBarClockTempo;
+			if (barClock.beatsPerBar != 1) {
+				this.prSyncBarClockMeterAndBeats;
+			} {
+				barClock.beats = barClock.bars2beats(clock.beats2bars(clock.beats));
+			}
+		});
+	}
+
+	prSetupBarClock {
+		clock.schedAbs(clock.nextBar, {
+			var tempoControllers;
+			barClock = TempoClock(clock.tempo / clock.beatsPerBar).permanent_(true);
+			this.prSyncBarClockMeterAndBeats;
+			tempoControllers = [
+				SimpleController(clock).put(\tempo,
+					{ this.prResetBarClockTempo }),
+				SimpleController(clock).put(\meter,
+					{ this.prResetBarClockTempo })
+			];
+		});
+	}
+
 	start {
 		thisProcess.interpreter.preProcessor = BacalaoParser.preProcess(_);
 		"Bacalao pattern parsing enabled".postln;
@@ -592,6 +634,8 @@ Bacalao {
 		var namesAndProxies = this.prGetNamesAndProxies;
 		^namesAndProxies.asKeyValuePairs.clump(2).select{ arg kv;
 			kv[1].numChannels.notNil
+			and: { kv[0] != '*' }
+			and: { kv[0] != \multibandEq }
 		}.collect(_.first)
 	}
 
@@ -678,12 +722,12 @@ Bacalao {
 	once { arg trkName, pattern, quant;
 		var slot = nil;
 		if (trkName.isKindOf(Association)) {
-			#trkName, slot = [trkName.key, trkName.value];
+			#trkName, slot = [trkName.key.asSymbol, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
-			this.prChangePattern(trkName.asSymbol, slot, pattern, nil, quant);
+			this.prChangePattern(trkName, slot, pattern, nil, quant);
 		} {
-			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
+			this.prSetSource(trkName, slot, pattern, quant);
 		};
 	}
 
@@ -701,7 +745,7 @@ Bacalao {
 	p { arg trkName, pattern, dur, quant, role, includeMask = true;
 		var slot;
 		if (trkName.isKindOf(Association)) {
-			#trkName, slot = [trkName.key, trkName.value];
+			#trkName, slot = [trkName.key.asSymbol, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern)) {
 			if (dur.isNil) {
@@ -713,9 +757,9 @@ Bacalao {
 				// (Tried things like: dur = dur.round.asInt.factors.minItem)
 				dur = 0;
 			};
-			this.prChangePattern(trkName.asSymbol, slot, pattern, dur, quant, role, includeMask);
+			this.prChangePattern(trkName, slot, pattern, dur, quant, role, includeMask);
 		} {
-			this.prSetSource(trkName.asSymbol, slot, pattern, quant);
+			this.prSetSource(trkName, slot, pattern, quant);
 		};
 	}
 
@@ -733,10 +777,16 @@ Bacalao {
 			// Synths with different defaults for the param.
 			var control;
 			var obj = proxy.objects.detect{ arg obj;
-				if (obj.isKindOf(SynthDefControl)) {
+				case
+				{ obj.isKindOf(SynthDefControl) } {
 					control = obj.synthDef.allControlNames.detect{ arg c; c.name == controlName };
 					control.notNil
-				} {
+				}
+				{ obj.isKindOf(SynthControl) } {
+					control = SynthDescLib.global.at(obj.source).controls.detect{ arg c; c.name == controlName };
+					control.notNil
+				}
+				{
 					false
 				}
 			};
@@ -779,7 +829,7 @@ Bacalao {
 			// Default case, for simple values
 			var targetValue = valueOrFunc;
 			var startValue = this.prGetControlValue(np, controlName);
-			if (targetValue.equalWithPrecision(startValue, 1e-4, 0.02) or: { fadeTime <= 0 }) {
+			if (startValue.isNil or: { targetValue.equalWithPrecision(startValue, 1e-4, 0.02) } or: { fadeTime <= 0 }) {
 				"Setting from % to %".format(startValue, targetValue).postln;
 				np.set(controlName, targetValue)
 			} {
@@ -797,6 +847,38 @@ Bacalao {
 		if (oldControl.isKindOf(NodeProxy) and: { oldControl.isKindOf(Ndef).not }) {
 			"Removing old control".postln;
 			clock.sched(server.latency + fadeTime + 0.5,{ oldControl.free; nil });
+		}
+	}
+
+	vget { arg trkName, vstControlName;
+		var vst = this.vst(trkName);
+		if (vst.notNil) {
+			vst.get(vstControlName, _.postln)
+		} {
+			Error("'%' is not a VST track".format(trkName)).throw
+		}
+	}
+
+	vset { arg trkName, controlName, value, fadeTime = 2;
+		var vst = this.vst(trkName);
+		if (vst.notNil) {
+			vst.get(controlName, { arg oldValue;
+				// Fade to new value
+				var targetValue = value;
+				var startValue = oldValue;
+				if (targetValue.equalWithPrecision(startValue, 1e-4, 0.02) or: { fadeTime <= 0 }) {
+					"Setting from % to %".format(startValue, targetValue).postln;
+					vst.set(controlName, targetValue)
+				} {
+					"Setting from % to % over % seconds".format(startValue, targetValue, fadeTime).postln;
+					this.prFade(
+						{ arg frac; vst.set(controlName, frac.linlin(0, 1, startValue, targetValue)) },
+						{ vst.set(controlName, targetValue) },
+						fadeTime);
+				}
+			})
+		} {
+			Error("'%' is not a VST track".format(trkName)).throw
 		}
 	}
 
@@ -860,7 +942,12 @@ Bacalao {
 	}
 
 	sched { arg event, quant = 1;
-		clock.schedAbs((quant * clock.beatsPerBar).nextTimeOnGrid(clock), { arg ...args; event.value(*args); nil });
+		barClock.schedAbs(quant.nextTimeOnGrid(barClock),
+			{ arg ...args;
+				event.value(*args);
+				nil
+			}
+		);
 	}
 
 	// Add a filter (needs array index > 0) to modify the NodeProxy
@@ -873,13 +960,13 @@ Bacalao {
 			^this;
 		};
 
-		#trkName, index = [trkNameAndIndex.key, trkNameAndIndex.value];
+		#trkName, index = [trkNameAndIndex.key.asSymbol, trkNameAndIndex.value];
 		if (index.isInteger and: {index > 0}) {
 			var np = this.proxy(trkName);
 			var wetParam = (\wet.asString ++ index).asSymbol;
 
 			// Make it into a audio NodeProxy if it's currently empty
-			np.numChannels ?? { np.source = { Silence.ar!2 } };
+			np.numChannels ?? { np.source = { Silence.ar ! numChannels } };
 			if (np[index].isNil) {
 				// Start the thing quiet initially, set the wet at the next quant
 				np.set(wetParam, 0);
@@ -893,17 +980,28 @@ Bacalao {
 		}
 	}
 
-	fxClear { arg trkName;
-		var np = this.proxy(trkName);
-		np.objects.indices[1..].do(np[_] = nil);
+	fxClear { arg trkName, fadeTime = 1;
+		var np = this.proxy(trkName = trkName.asSymbol);
+		var oldFadeTime = np.fadeTime;
+		np.fadeTime = fadeTime;
+		np.objects.indices.copy.do{ arg slot;
+			if (slot > 0) {
+				np[slot] = nil;
+			}
+		};
+		{
+			np.fadeTime = oldFadeTime;
+		}.defer(0.1)
 	}
 
 	// Set all slot effects to dry (with optional fadeTime), without removing them
 	fxDry { arg trkName, fadeTime = 0;
-		var np = this.proxy(trkName);
-		np.objects.indices[1..].do{ arg slot;
-			var key = ("wet" ++ slot).asSymbol;
-			this.set(trkName, key, 0, fadeTime);
+		var np = this.proxy(trkName = trkName.asSymbol);
+		np.objects.indices.do{ arg slot;
+			if (slot > 0) {
+				var key = ("wet" ++ slot).asSymbol;
+				this.set(trkName, key, 0, fadeTime);
+			}
 		}
 	}
 
@@ -923,7 +1021,7 @@ Bacalao {
 		var bars = (desiredBars ?? { (buf.duration / barDur).max(0.5).round.debug("chop calculated bars") }).max(0.1);
 		var origGrainDur = buf.duration / (pieces = pieces.max(1));
 		var starts = (0..pieces-1) * origGrainDur;
-		var cycleDur = bars * clock.beatsPerBar / clock.tempo;
+		var cycleDur = bars * barDur;
 		var rate = desiredRate ?? { (buf.duration / cycleDur).debug("chop calculated rate") };
 		inst = inst ?? { switch (buf.numChannels,
 			1, { \sample1 },
@@ -964,6 +1062,72 @@ Bacalao {
 		this.prVstPrint("VST Effects", _.synth.not, onlyWithPresets, extraVstPluginSearchPath);
 	}
 
+	// Add a VST filter effect (needs array index > 0) to modify the NodeProxy
+	// e.g. b.vstFx(\drum -> 10, "Reaktor 6", "goldFinalizer"); { arg in; JPverb.ar(in, 3) }, 0.3);
+	// You can clear fx in a slot with: b.fx(\drum -> 10);
+	vstFx { arg trkNameAndIndex, vstName, programPath, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit", wet=1;
+		var trkName, index;
+		if (Bacalao.prVSTPluginInstalled.not) { ^this };
+
+		if (trkNameAndIndex.isKindOf(Association).not) {
+			"trkName and index should be an Association, e.g: b.vstFx(\\drum -> 10, ...)".error;
+			^this;
+		};
+
+		#trkName, index = [trkNameAndIndex.key.asSymbol, trkNameAndIndex.value];
+		if (index.isInteger and: {index > 0}) {
+			server.waitForBoot{
+				var vstCtrlVarName;
+				var np = this.proxy(trkName);
+				var wetParam = ("wet" ++ index).asSymbol;
+
+				// Make it into a audio NodeProxy if it's currently empty
+				server.sync;
+				np.numChannels ?? { np.source = { Silence.ar ! numChannels } };
+				server.sync;
+				if (np[index].isNil) {
+					// Start the thing quiet initially, set the wet at the next quant
+					np.set(wetParam, 0);
+				};
+
+				if (VSTPlugin.plugins.isEmpty) {
+					VSTPlugin.search(server, extraVstPluginSearchPath);
+					server.sync;
+				};
+
+				np[index] = \vstFilter -> { arg in; VSTPlugin.ar(in, numChannels) };
+				this.sched({
+					np.set(wetParam, wet);
+				}, 1);
+				server.sync;
+				vstCtrlVarName = "vstFx_%_%".format(
+					if (trkName == '*') { "global" } { trkName },
+					index).asSymbol;
+				currentEnvironment[vstCtrlVarName] =
+				VSTPluginNodeProxyController(np, index).open(
+					vstName,
+					editor: true,
+					verbose: true,
+					action: { arg vstController, success;
+						if (success) {
+							"Opened VSTPluginController for %/% effect with %".format(trkName, index, vstName).postln;
+							vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
+							if (programPath.notNil) {
+								this.prVstRead(vstController, programPath);
+							} {
+								"No VST preset specified to load".warn;
+							}
+						} {
+							("Unable to open VST: " ++ vstName).error;
+						}
+					},
+					multiThreading: true
+				);
+			}
+		} {
+			"fx index should be an integer greater than 0...skipping".warn;
+		}
+	}
 
 	vstInit { arg trkName, vstName, programPath, bankAndProgram, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
 		if (Bacalao.prVSTPluginInstalled.not) { ^this };
@@ -982,49 +1146,39 @@ Bacalao {
 				#vstController, vstProxy = dictEntry;
 			};
 			vstProxy = vstProxy ?? { this.proxy(trkName).clock_(clock) };
-			if (vstProxy.source != \bacalao_vsti) {
+			if (vstProxy.source != (\vstDef -> \bacalao_vsti)) {
 				// Don't recreate Synth using VSTPlugin if not necessary
-				vstProxy.source = \bacalao_vsti;
+				vstProxy.source = \vstDef -> \bacalao_vsti;
 			};
 			vstProxy.play;
 			server.sync;
 
-			// Schedule on our TempoClock
-			// If we schedule on SystemClock (or AppClock) we get:
-			//   "FAILURE IN SERVER /u_cmd Node NNNN not found"
-			(vstProxy.clock).play({
-				// schedule bundle with Server latency
-				var bundle = server.makeBundle(false, {
-					vstController = vstController ?? {
-						var synth = Synth.basicNew(\bacalao_vsti, server, vstProxy.objects.first.nodeID);
-						VSTPluginController(synth).debug("New '%'".format(trkName))
-					};
-					vstDict[trkName] = [ vstController, vstProxy ];
-					vstController.open(vstName, editor: true, action: { arg vstController, success;
-						if (success) {
-							"Opened VSTPluginController for % with %".format(trkName, vstName).postln;
-							vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
-							if (programPath.notNil) {
-								if (bankAndProgram.notNil) {
-									"Both programPath and bankAndProgram were specified...only using programPath".warn;
-								};
-								this.prVstRead(vstController, programPath);
-							} {
-								if (bankAndProgram.isKindOf(Association)) {
-									this.vstBankProgram(trkName, bankAndProgram.key, bankAndProgram.value);
-								} {
-									if (bankAndProgram.notNil) {
-										"Expected bankAndProgram to be an Association (bank -> program), e.g. (3 -> 22)".warn;
-									}
-								}
-							}
+			vstController = vstController ?? {
+				VSTPluginNodeProxyController(vstProxy).debug("New '%'".format(trkName))
+			};
+			vstDict[trkName] = [ vstController, vstProxy ];
+			vstController.open(vstName, editor: true, action: { arg vstController, success;
+				if (success) {
+					"Opened VSTPluginController for % with %".format(trkName, vstName).postln;
+					vstController.setTempo((clock.tempo * 60).debug("set VST tempo post-init"));
+					if (programPath.notNil) {
+						if (bankAndProgram.notNil) {
+							"Both programPath and bankAndProgram were specified...only using programPath".warn;
+						};
+						this.prVstRead(vstController, programPath);
+					} {
+						if (bankAndProgram.isKindOf(Association)) {
+							this.vstBankProgram(trkName, bankAndProgram.key, bankAndProgram.value);
 						} {
-							("Unable to open VST: " ++ vstName).error;
+							if (bankAndProgram.notNil) {
+								"Expected bankAndProgram to be an Association (bank -> program), e.g. (3 -> 22)".warn;
+							}
 						}
-					}, multiThreading: true);
-				});
-				server.listSendBundle(server.latency, bundle);
-			});
+					}
+				} {
+					("Unable to open VST: " ++ vstName).error;
+				}
+			}, multiThreading: true);
 		}
 	}
 
@@ -1118,6 +1272,34 @@ Bacalao {
 		^if (vst.notNil) {
 			vstDict.at(trkName).last
 		} {
+			if (trkName == '*') {
+				server.waitForBoot{
+					// Special case for the "global output" Proxy,
+					// e.g. to put fx on the final output of all tracks.
+					if (outputGroup.isNil or: { outputGroup.isPlaying.not }) {
+						// Create a Group for our NodeProxy after everything (but before the Safety)
+//						var safety = Safety.all.at(server.name);
+//						outputGroup = if (safety.notNil) {
+//							Group.before(safety.synth).register
+//						} {
+//							Group.after(server.defaultGroup).register
+//						};
+						
+						var previousGroup = if (spatial.notNil and: { spatial.decoderGroup.notNil }) {
+							spatial.decoderGroup
+						} {
+							server.defaultGroup
+						};
+						outputGroup = Group.after(previousGroup).register;
+						server.sync;
+					};
+					// Define a passthrough
+					Ndef(trkName).parentGroup_(outputGroup);
+					Ndef(trkName).bus = Bus(\audio, 0, numChannels, server);
+				}
+			};
+
+			Ndef.ar(trkName -> server.name, numChannels);
 			Ndef(trkName -> server.name)
 		};
 	}
@@ -1212,8 +1394,9 @@ Bacalao {
 	// Return all the Pdefs that we use for "slots" with a given track
 	// (we use name mangling for this).
 	prGetPdefSlots { arg trkName;
+		var trkStr = if (trkName == '*') { "\\*" } { trkName.asString };
 		^Pdef.all.select{ arg x;
-			"%\\/(nil|\\d+)\\/%".format(trkName, server.name).matchRegexp(x.key.asString)
+			"%\\/(nil|\\d+)\\/%".format(trkStr, server.name).matchRegexp(x.key.asString)
 		}
 	}
 
@@ -1256,7 +1439,6 @@ Bacalao {
 		var pdef, ndef, vst = this.vst(trkName = trkName.asSymbol);
 		var quantStartBeat;
 
-		// Stretch it so the durations in bars are converted to beats on our clock
 		if (pattern.notNil) {
 			var globalDefaultDict = this.defGet('*');
 			var defaultDict = this.defGet(trkName);
@@ -1277,13 +1459,12 @@ Bacalao {
 			if (defaultDict.notNil) {
 				pattern = pattern << defaultDict << globalDefaultDict;
 			};
-			pattern = Pmul(\stretch, Pfunc{clock.beatsPerBar}, pattern);
 		};
 
 		if (loopDur.notNil) {
 			if (loopDur > 0) {
 				// Shorten or extend the loop duration to a specfic length and loop it
-				pattern = PnSafe(Pfindur(loopDur * clock.beatsPerBar, Pseq([pattern, Pbind(\degree, Rest(), \dur, loopDur * clock.beatsPerBar)])));
+				pattern = PnSafe(Pfindur(loopDur, Pseq([pattern, Pbind(\degree, Rest(), \dur, loopDur)])));
 				patternQuant = patternQuant ?? { [loopDur, 0] };
 				"Setting up % for looping with duration % and quant %".format(pdefName, loopDur, patternQuant).postln;
 			} {
@@ -1295,9 +1476,9 @@ Bacalao {
 		};
 
 		// The quantization until this point has been in bars, not beats
-		patternQuant = (patternQuant ?? { #[1, 0] }) * clock.beatsPerBar;
-		pdef = Pdef(pdefName).clock_(clock).quant_(patternQuant);
-		ndef = this.proxy(trkName).clock_(clock).quant_(patternQuant);
+		patternQuant = (patternQuant ?? { #[1, 0] });
+		pdef = Pdef(pdefName).clock_(barClock).quant_(patternQuant);
+		ndef = this.proxy(trkName).clock_(barClock).quant_(patternQuant);
 		if (replacePatterns) {
 			// Set the source of other slots to nil (uses current Quant)
 			this.prClearOtherPatternSlots(trkName, except: pdef);
@@ -1310,13 +1491,13 @@ Bacalao {
 
 		// We set a 'time' key in our Events, which provides time since playing.
 		// Otherwise, the clock restarts on a given sub-pattern, for example amp"Psine.exprange(8,-0.25,0.1,1)"
-		quantStartBeat = patternQuant.nextTimeOnGrid(clock);
+		quantStartBeat = patternQuant.nextTimeOnGrid(barClock);
 		case
 		{ vst.notNil and: { role.isNil } } {
 			pdef.source = pattern <> (type: \vst_midi_and_pset, vst: vst, proxy: ndef, time: { thisThread.beats - quantStartBeat });
 			// Must include clock argument here, even if we set the Pdef's clock
 			// See issue: https://github.com/supercollider/supercollider/issues/4803
-			pdef.play(clock);
+			pdef.play(barClock);
 			// Explicitly resume processing the Synth in case it's bypassed
 			ndef.set(\bypass, 0);
 		}
@@ -1324,7 +1505,7 @@ Bacalao {
 			pdef.source = pattern <> (type: \pset_vset_only, vst: vst, proxy: ndef, time: { thisThread.beats - quantStartBeat });
 			// Must include clock argument here, even if we set the Pdef's clock
 			// See issue: https://github.com/supercollider/supercollider/issues/4803
-			pdef.play(clock);
+			pdef.play(barClock);
 		}
 		{
 			// Don't redefine the Ndef source all the time with
@@ -1365,8 +1546,8 @@ Bacalao {
 		var ndef, vst = this.vst(trkName = trkName.asSymbol);
 
 		// The quantization until this point has been in bars, not beats
-		quant = (quant ?? { #[1, 0] }) * clock.beatsPerBar;
-		ndef = this.proxy(trkName).clock_(clock).quant_(quant);
+		quant = quant ?? { #[1, 0] };
+		ndef = this.proxy(trkName).clock_(barClock).quant_(quant);
 		if (replacePatterns) {
 			// Set the source of other slots to nil (uses current Quant)
 			this.prClearOtherPatternSlots(trkName, except: nil);
@@ -1407,7 +1588,8 @@ Bacalao {
 BacalaoParser {
 	classvar eventAbbrevs;
 	const unsignedInt = "\\d+";
-	const eventPattern = "(?:[^a-z@]*|(@|\\b[a-z][_a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
+	const eventPattern = "(?:[^a-z\":@]*|(@|\\b[a-z][_a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
+	// const eventPattern = "(@|[a-z][_a-zA-Z0-9]*)(~([a-z][_a-zA-Z0-9]*))?\"([^\"\\n]*)\"";
 	const <charPattern = "(?:[^a-z@]*|(@|\\b[a-z][_a-zA-Z0-9]*))(?:~([a-z][_a-zA-Z0-9]*))?'([^'\\n]*)'";
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
@@ -1432,8 +1614,6 @@ BacalaoParser {
 	// [ overallMatch, cmd, argStr ]
 	const subCmd = "[:&]\\s*(\\w+)([^:&]*)";
 	const <numericExpression = "[0-9./*+()-]+";
-	classvar globalCmd;
-	classvar cmdArgs;
 
 	*initClass {
 		var number;
@@ -1463,16 +1643,6 @@ BacalaoParser {
 		// [ overallMatch, elem, repeat, hold, duplicate ]
 		simpleElem = "^(?:" ++ elemWithMods ++ ")$";
 		patternValueArg = "^\\s*(?:(?:" ++ balancedArray ++ ")|(?:" ++ numberWithMods ++ "))\\s*$";
-
-		cmdArgs = IdentityDictionary();
-		cmdArgs[\clear] = numberFloat;
-		cmdArgs[\tempo] = numericExpression;
-		cmdArgs[\beatsPerBar] = numberFloat;
-		cmdArgs[\inst] = word;
-		cmdArgs[\quant] = numberFloat;
-		// globalCmd must not include a ':'
-		// [ overallMatch, command, argStr ]
-		globalCmd = "^\\s*(" ++ word ++ ")\\s*([^[:space:]:&]?[^:&]*?)\\s*$";
 
 		//////////
 		// Abbreviations for Event keys
@@ -1586,87 +1756,54 @@ BacalaoParser {
 		}
 	}
 
-	*prProcessPatterns { arg code;
-		var curOffset = 0;
-		var pat = code.findRegexp(eventPattern).clump(4).reject{|m| m[1][1].isEmpty};
-		// pat.postln;
-		pat.do{ arg p;
-			var fullMatch = p[0];
-			// Convert abbreviation to long name (if one is found)
-			var patternType = this.resolveAbbrev(p[1].last);
-			var optVariableName = p[2].last;
-			var patternString = p[3].last;
-			var replaceStr;
-			var replacements = [];
-			var numAlternates = [];
-			// Figure out the replacement string if there are any "alternating"
-			// elements, written e.g. as "<1 2 3>" (which means 1 first time around,
-			// 2 the second, and 3 the third). The total number of cycles
-			// required to see everything in the pattern is the least common multiple
-			// of all alternate counts.
+	*prResolvePatternSyntax { arg pair;
+		var key = this.resolveAbbrev(pair[0]);
+		var value = pair[1];
+		^case
+		{ value.isString } {
+			var optVariableName = "";
+			this.prReplaceStringPattern(key, optVariableName, value).interpret.patternpairs;
+		}
+		{ value.isArray and: value.first.class == Char } {
+			var optVariableName = "";
+			this.prReplaceCharPattern(key, optVariableName, value.join).interpret.patternpairs;
+		} {
+			[key, value]
+		};
+	}
 
-			if (patternType == '@' and: { optVariableName.isEmpty }) {
-				Error("Can't use default (non-variable) lookup with string pattern").throw;
+	*prReplaceStringPattern { arg patternType, optVariableName, patternString;
+		// Convert abbreviation to long name (if one is found)
+		var replaceStr;
+		var replacements = [];
+		var numAlternates = [];
+		patternType = this.resolveAbbrev(patternType);
+		// Figure out the replacement string if there are any "alternating"
+		// elements, written e.g. as "<1 2 3>" (which means 1 first time around,
+		// 2 the second, and 3 the third). The total number of cycles
+		// required to see everything in the pattern is the least common multiple
+		// of all alternate counts.
+
+		if (patternType == '@' and: { optVariableName.isEmpty }) {
+			Error("Can't use default (non-variable) lookup with string pattern").throw;
+		};
+
+		// Replace rests
+		// @todo Be more selective, allowing env. variables such as "[~foo <1 ~bar>]"
+		if (optVariableName.isEmpty) {
+			// In the case of variable/namespace lookup, then ~ is allowed;
+			// it is interpreted as "Rest" by the PnsymRest class.
+			patternString = patternString.replace("~", this.prGetRestString(patternType));
+		} {
+			if (currentEnvironment[optVariableName.asSymbol].isKindOf(Dictionary).not) {
+				Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
 			};
+		};
 
-			// Replace rests
-			// @todo Be more selective, allowing env. variables such as "[~foo <1 ~bar>]"
-			if (optVariableName.isEmpty) {
-				// In the case of variable/namespace lookup, then ~ is allowed;
-				// it is interpreted as "Rest" by the PnsymRest class.
-				patternString = patternString.replace("~", this.prGetRestString(patternType));
-			} {
-				if (currentEnvironment[optVariableName.asSymbol].isKindOf(Dictionary).not) {
-					Error("'~%' lookup Dictionary not found".format(optVariableName)).throw;
-				};
-			};
-
-			// First try to split on comma-separated elements in angle brackets (chords)
-			this.findChord(patternString).reverseDo{ arg m;
-				var alternateElements = BacalaoParser.splitSimplify(m[1], $,);
-				if (alternateElements.size > 1) {
-					// Replace Bacalao parser variables with their values
-					if (optVariableName.isEmpty) {
-						alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
-					} {
-						alternateElements = alternateElements.collect{ arg e;
-							this.prVariableNameToString(e);
-						};
-					};
-
-					patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
-					replacements = replacements.add("Ptuple([%])".format(alternateElements.join($,)));
-				};
-			};
-
-			// Now try to split on space-separated elements in angle brackets (alternation)
-			this.findAngleBracketed(patternString).reverseDo{ arg m;
-				var alternateElements = BacalaoParser.splitSimplify(m[1]);
-
-				alternateElements = alternateElements.collect{ arg elem;
-					var elemMatch = this.findSimpleElem(elem);
-					if (elemMatch.size == 1) {
-						var full, elem, repeat, hold, dupl;
-						if (elemMatch[0].size != 5) {
-							Error("Unexpected match size: %".format(elemMatch[0])).throw
-						};
-						#full, elem, repeat, hold, dupl = elemMatch[0];
-						if (elem.isEmpty) {
-							Error("There is no array element: %".format(full)).throw
-						};
-						repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
-						hold = if (hold.isEmpty) { 1 } { hold.asFloat };
-						// Note: we don't support Bjorklund e.g. (3,8) inside angle brackets
-						dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
-						if (hold != 1 or: { repeat != 1 }) {
-							Error("We don't support hold or repeat inside alternating <> elements, only '!' duplicate").throw
-						};
-						elem ! dupl;
-					} {
-						Error("Invalid alternate element entry: %".format(elem.cs)).throw;
-					};
-				}.flatten;
-
+		// First try to split on comma-separated elements in angle brackets (chords)
+		this.findChord(patternString).reverseDo{ arg m;
+			var alternateElements = BacalaoParser.splitSimplify(m[1], $,);
+			if (alternateElements.size > 1) {
 				// Replace Bacalao parser variables with their values
 				if (optVariableName.isEmpty) {
 					alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
@@ -1675,129 +1812,188 @@ BacalaoParser {
 						this.prVariableNameToString(e);
 					};
 				};
-				numAlternates = numAlternates.add(alternateElements.size);
+
 				patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
-				replacements = replacements.add("Ppatlace([%],inf)".format(alternateElements.join($,)));
+				replacements = replacements.add("Ptuple([%])".format(alternateElements.join($,)));
+			};
+		};
+
+		// Now try to split on space-separated elements in angle brackets (alternation)
+		this.findAngleBracketed(patternString).reverseDo{ arg m;
+			var alternateElements = BacalaoParser.splitSimplify(m[1]);
+
+			alternateElements = alternateElements.collect{ arg elem;
+				var elemMatch = this.findSimpleElem(elem);
+				if (elemMatch.size == 1) {
+					var full, elem, repeat, hold, dupl;
+					if (elemMatch[0].size != 5) {
+						Error("Unexpected match size: %".format(elemMatch[0])).throw
+					};
+					#full, elem, repeat, hold, dupl = elemMatch[0];
+					if (elem.isEmpty) {
+						Error("There is no array element: %".format(full)).throw
+					};
+					repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
+					hold = if (hold.isEmpty) { 1 } { hold.asFloat };
+					// Note: we don't support Bjorklund e.g. (3,8) inside angle brackets
+					dupl = if (dupl.isEmpty) { 1 } { dupl.asInteger };
+					if (hold != 1 or: { repeat != 1 }) {
+						Error("We don't support hold or repeat inside alternating <> elements, only '!' duplicate").throw
+					};
+					elem ! dupl;
+				} {
+					Error("Invalid alternate element entry: %".format(elem.cs)).throw;
+				};
+			}.flatten;
+
+			// Replace Bacalao parser variables with their values
+			if (optVariableName.isEmpty) {
+				alternateElements = this.prResolveVariables(alternateElements, patternType, optVariableName);
+			} {
+				alternateElements = alternateElements.collect{ arg e;
+					this.prVariableNameToString(e);
+				};
+			};
+			numAlternates = numAlternates.add(alternateElements.size);
+			patternString = patternString.replaceAt("ALTERNATE" ++ replacements.size.asPaddedString(4), m[0]-1, m[1].size+2);
+			replacements = replacements.add("Ppatlace([%],inf)".format(alternateElements.join($,)));
+		};
+
+		{
+			// var patternArray = this.splitSimplify(patternString.replace("~", this.prGetRestString(patternType)));
+			var elemsAndDurs = [];
+			var elems, durs, resolveChord;
+			// Support "|" as bar-split symbol. For example, the following two
+			// should be equivalent (but the first is easier to understand):
+			//   deg"[1 2 3]@2 | 4 5 | 6*3" (play 1,2,3 over two bars, 4,5 over 1 and 6,6,6 over 1)
+			//   deg"[[1 2 3]@2 [4 5] 6*3]@4" (same, but you need to figure out the total bars (4) yourself)
+			patternString.split(barSplitChar).do{ arg patternString;
+				elemsAndDurs = elemsAndDurs ++ {
+					var patternArray = this.parseArray(patternString);
+					if (patternArray.size > 1) {
+						// "Wrapping top-level pattern array".postln;
+						patternArray = [ patternArray -> 1];
+					};
+					this.calculateDurations(patternArray);
+				}.value;
+			};
+			// Replace alphabetic-only strings by Symbol notation: 'symbol'
+			// patternArray = patternArray.collect{ |p| "^[A-Za-z]+$".matchRegexp(p).if(p.asSymbol.cs, p) };
+			#elems, durs = elemsAndDurs.flop;
+
+			// Replace Bacalao parser variables with their values, unless we're
+			// using an explicit "namespace" variable.
+			if (optVariableName.isEmpty) {
+				elems = this.prResolveVariables(elems, patternType, optVariableName);
 			};
 
-			{
-				// var patternArray = this.splitSimplify(patternString.replace("~", this.prGetRestString(patternType)));
-				var elemsAndDurs = [];
-				var elems, durs, resolveChord;
-				// Support "|" as bar-split symbol. For example, the following two
-				// should be equivalent (but the first is easier to understand):
-				//   deg"[1 2 3]@2 | 4 5 | 6*3" (play 1,2,3 over two bars, 4,5 over 1 and 6,6,6 over 1)
-				//   deg"[[1 2 3]@2 [4 5] 6*3]@4" (same, but you need to figure out the total bars (4) yourself)
-				patternString.split(barSplitChar).do{ arg patternString;
-					elemsAndDurs = elemsAndDurs ++ {
-						var patternArray = this.parseArray(patternString);
-						if (patternArray.size > 1) {
-							// "Wrapping top-level pattern array".postln;
-							patternArray = [ patternArray -> 1];
-						};
-						this.calculateDurations(patternArray);
-					}.value;
+			// *Don't* convert strings to symbols here...this allows you to evaluate
+			// variables (e.g. n = Pwhite(0,7,1); deg"n*4") and arbitrary code in patterns!
+			// elems = elems.collect{ |elem| "^[A-Za-z]+$".matchRegexp(elem).if(elem.asSymbol.cs, elem) };
+			if (elems.size > 1) {
+				var numCyclesRequired = numAlternates.reduce(\lcm) ? 1.0;
+				var longElemStr = if (optVariableName.isEmpty) {
+					var variables = String.streamContents({ arg stream;
+						elems.printOn(stream); });
+					"Ppatlace(%, %)".format(variables, numCyclesRequired);
+				} {
+					var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+					"%(Ppatlace([%], %), ~%)".format(pnsym, elems.collect{|e|
+						if (e.beginsWith("ALTERNATE"))
+						{ e }
+						{ this.prVariableNameToString(e) }
+					}.join($,), numCyclesRequired, optVariableName);
 				};
-				// Replace alphabetic-only strings by Symbol notation: 'symbol'
-				// patternArray = patternArray.collect{ |p| "^[A-Za-z]+$".matchRegexp(p).if(p.asSymbol.cs, p) };
-				#elems, durs = elemsAndDurs.flop;
-
-				// Replace Bacalao parser variables with their values, unless we're
-				// using an explicit "namespace" variable.
-				if (optVariableName.isEmpty) {
-					elems = this.prResolveVariables(elems, patternType, optVariableName);
+				var longDursStr = String.streamContents({ arg stream;
+					durs.printOn(stream); });
+				//var longDursStr = String.streamContents({ arg stream;
+				//	durs.collect(_.asStringPrec(17)).printOn(stream); });
+				if (patternType == '@') {
+					replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pn(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
+				} {
+					replaceStr = "Pbind('%', %, 'dur', Pseq(%, %))".format(patternType, longElemStr, longDursStr, numCyclesRequired);
+				}
+			} {
+				var elemStr = if (optVariableName.isEmpty) {
+					String.streamContents({ arg stream; elems[0].printOn(stream); });
+				} {
+					var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+					var e = this.prVariableNameToString(elems[0].value);
+					"%(Pseq([%]), ~%)".format(pnsym, e, optVariableName);
 				};
-
-				// *Don't* convert strings to symbols here...this allows you to evaluate
-				// variables (e.g. n = Pwhite(0,7,1); deg"n*4") and arbitrary code in patterns!
-				// elems = elems.collect{ |elem| "^[A-Za-z]+$".matchRegexp(elem).if(elem.asSymbol.cs, elem) };
-				if (elems.size > 1) {
-					var numCyclesRequired = numAlternates.reduce(\lcm) ? 1.0;
-					var longElemStr = if (optVariableName.isEmpty) {
-						var variables = String.streamContents({ arg stream;
-							elems.printOn(stream); });
-						"Ppatlace(%, %)".format(variables, numCyclesRequired);
-					} {
-						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
-						"%(Ppatlace([%], %), ~%)".format(pnsym, elems.collect{|e|
-							if (e.beginsWith("ALTERNATE"))
-							{ e }
-							{ this.prVariableNameToString(e) }
-						}.join($,), numCyclesRequired, optVariableName);
-					};
-					var longDursStr = String.streamContents({ arg stream;
-						durs.printOn(stream); });
-					//var longDursStr = String.streamContents({ arg stream;
-					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
+				if (durs[0] === 1) {
+					// In the case of a single entry at the top level (and no array braces)
+					// just return a single value repeatedly, with no duration.
+					// If you want a single event that lasts one cycle, use
+					// "[0]" or "0@1"
 					if (patternType == '@') {
-						replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pn(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
+						replaceStr = "Pn(%)".format(elemStr);
 					} {
-						replaceStr = "Pbind('%', %, 'dur', Pseq(%, %))".format(patternType, longElemStr, longDursStr, numCyclesRequired);
+						replaceStr = "Pbind('%', %)".format(patternType, elemStr);
 					}
 				} {
-					var elemStr = if (optVariableName.isEmpty) {
-						String.streamContents({ arg stream; elems[0].printOn(stream); });
+					if (patternType == '@') {
+						replaceStr = "Pchain(Pbind('dur', Pn(%, 1)), Pn(%))".format(durs[0], elemStr);
 					} {
-						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
-						var e = this.prVariableNameToString(elems[0].value);
-						"%(Pseq([%]), ~%)".format(pnsym, e, optVariableName);
-					};
-					if (durs[0] === 1) {
-						// In the case of a single entry at the top level (and no array braces)
-						// just return a single value repeatedly, with no duration.
-						// If you want a single event that lasts one cycle, use
-						// "[0]" or "0@1"
-						if (patternType == '@') {
-							replaceStr = "Pn(%)".format(elemStr);
-						} {
-							replaceStr = "Pbind('%', %)".format(patternType, elemStr);
-						}
-					} {
-						if (patternType == '@') {
-							replaceStr = "Pchain(Pbind('dur', Pn(%, 1)), Pn(%))".format(durs[0], elemStr);
-						} {
-							replaceStr = "Pbind('%', %, 'dur', Pn(%, 1))".format(patternType, elemStr, durs[0]);
-						}
+						replaceStr = "Pbind('%', %, 'dur', Pn(%, 1))".format(patternType, elemStr, durs[0]);
 					}
-				};
+				}
+			};
 
-				case
-				{ patternType == \midimod } {
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 1)";
-				}
-				{ patternType == \midibreath } {
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 2)";
-				}
-				{ patternType == \midifoot } {
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 4)";
-				}
-				{ patternType == \midipedal } { // hold: on >= 64, off < 64
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 64)";
-				}
-				{ patternType == \midireso } { // aka Timbre
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 71)";
-				}
-				{ patternType == \midicut } { // aka Brightness
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 74)";
-				}
-				{ patternType == \midibend } {
-					// Expects 0-16383, where 8192 is "0" (no bending)
-					replaceStr = replaceStr.replace(patternType.cs, "'val'").drop(-1) ++ ", \\midicmd, \\bend)";
-				}
-				{ patternType.asString.beginsWith("midicc") } {
-					var ccNum = patternType.asString[6..].asInteger.debug("ccNum");
-					replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, %)".format(ccNum);
-				};
+			case
+			{ patternType == \midimod } {
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 1)";
+			}
+			{ patternType == \midibreath } {
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 2)";
+			}
+			{ patternType == \midifoot } {
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 4)";
+			}
+			{ patternType == \midipedal } { // hold: on >= 64, off < 64
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 64)";
+			}
+			{ patternType == \midireso } { // aka Timbre
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 71)";
+			}
+			{ patternType == \midicut } { // aka Brightness
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, 74)";
+			}
+			{ patternType == \midibend } {
+				// Expects 0-16383, where 8192 is "0" (no bending)
+				replaceStr = replaceStr.replace(patternType.cs, "'val'").drop(-1) ++ ", \\midicmd, \\bend)";
+			}
+			{ patternType.asString.beginsWith("midicc") } {
+				var ccNum = patternType.asString[6..].asInteger.debug("ccNum");
+				replaceStr = replaceStr.replace(patternType.cs, "'control'").drop(-1) ++ ", \\midicmd, \\control, \\ctlNum, %)".format(ccNum);
+			};
 
-			}.value;
+		}.value;
+		if (replaceStr.notNil) {
+			replacements.reverseDo{ arg replacement, i;
+				var index = replacements.size - 1 - i;
+				replaceStr = replaceStr.replace("ALTERNATE" ++ index.asPaddedString(4), replacement);
+			};
+		};
+		^replaceStr
+	}
+
+	*prProcessPatterns { arg code;
+		var curOffset = 0;
+		var pat = code.findRegexp(eventPattern).clump(4).reject{|m| m[1][1].isEmpty};
+		// pat.postln;
+		pat.do{ arg p;
+			var fullMatch = p[0];
+			var patternType = p[1].last;
+			var optVariableName = p[2].last;
+			var patternString = p[3].last;
+			var replaceStr = this.prReplaceStringPattern(
+				patternType, optVariableName, patternString
+			);
 			// [curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
 			(fullMatch.last -> replaceStr).postln;
 			// [patternArray, replaceStr].postln;
 			if (replaceStr.notNil) {
-				replacements.reverseDo{ arg replacement, i;
-					var index = replacements.size - 1 - i;
-					replaceStr = replaceStr.replace("ALTERNATE" ++ index.asPaddedString(4), replacement);
-				};
 				code = code.replaceAt(replaceStr, fullMatch.first + curOffset, fullMatch.last.size);
 				// code.postln;
 				curOffset = curOffset + replaceStr.size - fullMatch.last.size
@@ -1917,79 +2113,88 @@ BacalaoParser {
 		^bars.flatten
 	}
 
+	*prReplaceCharPattern { arg patternType, optVariableName, patternString;
+		// Convert abbreviation to long name (if one is found)
+		var replaceStr;
+		patternType = this.resolveAbbrev(patternType);
+		{
+			var patternArray = this.prParseCharArray(patternType, patternString, optVariableName);
+			var elemsAndDurs = {
+				if (patternArray.size > 1) {
+					var totalDur = patternArray.collect(_.value).sum;
+					// "Wrapping top-level pattern array".postln;
+					patternArray = [ patternArray -> totalDur];
+				};
+				this.calculateDurations(patternArray);
+			}.value;
+			var elems, durs;
+			#elems, durs = elemsAndDurs.flop;
+
+			if (elems.size > 1) {
+				var elemSeq = elems.separate{ arg a, b;
+					a.isKindOf(Association) != b.isKindOf(Association)
+				}.collect{ arg elems;
+					if (elems.first.isKindOf(Association)) {
+						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+						"%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
+					} {
+						elems.join($,)
+					}
+				};
+
+				var longElemStr = String.streamContents({ arg stream;
+					elemSeq.printOn(stream); });
+				var longDursStr = String.streamContents({ arg stream;
+					durs.printOn(stream); });
+				//var longDursStr = String.streamContents({ arg stream;
+				//	durs.collect(_.asStringPrec(17)).printOn(stream); });
+				var numCyclesRequired = 1.0;
+				if (patternType == '@') {
+					replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pseq(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
+				} {
+					replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
+				}
+			} {
+				if (elems[0].isKindOf(Association)) {
+					var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
+					elems[0] = "%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
+				};
+
+				if (durs[0] === 1) {
+					// In the case of a single entry at the top level (and no array braces)
+					// just return a single value repeatedly, with no duration.
+					// If you want a single event that lasts one cycle, use
+					// "[0]" or "0@1"
+					if (patternType == '@') {
+						replaceStr = "Pn(%)".format(elems[0]);
+					} {
+						replaceStr = "Pbind('%', %)".format(patternType, elems[0]);
+					}
+				} {
+					if (patternType == '@') {
+						replaceStr = "Pchain(Pbind('dur', %), Pn(%))".format(durs[0], elems[0]);
+					} {
+						replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elems[0], durs[0]);
+					}
+				}
+			};
+		}.value;
+		^replaceStr
+	}
+
 	*prProcessCharPatterns { arg code;
 		var curOffset = 0;
 		var pat = code.findRegexp(charPattern).clump(4).reject{|m| m[1][1].isEmpty};
 		// pat.postln;
 		pat.do{ arg p;
 			var fullMatch = p[0];
-			// Convert abbreviation to long name (if one is found)
-			var patternType = this.resolveAbbrev(p[1].last);
+			var patternType = p[1].last;
 			var optVariableName = p[2].last;
 			var patternString = p[3].last;
-			var replaceStr;
-			{
-				var patternArray = this.prParseCharArray(patternType, patternString, optVariableName);
-				var elemsAndDurs = {
-					if (patternArray.size > 1) {
-						var totalDur = patternArray.collect(_.value).sum;
-						// "Wrapping top-level pattern array".postln;
-						patternArray = [ patternArray -> totalDur];
-					};
-					this.calculateDurations(patternArray);
-				}.value;
-				var elems, durs;
-				#elems, durs = elemsAndDurs.flop;
+			var replaceStr = this.prReplaceCharPattern(
+				patternType, optVariableName, patternString
+			);
 
-				if (elems.size > 1) {
-					var elemSeq = elems.separate{ arg a, b;
-						a.isKindOf(Association) != b.isKindOf(Association)
-					}.collect{ arg elems;
-						if (elems.first.isKindOf(Association)) {
-							var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
-							"%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
-						} {
-							elems.join($,)
-						}
-					};
-
-					var longElemStr = String.streamContents({ arg stream;
-						elemSeq.printOn(stream); });
-					var longDursStr = String.streamContents({ arg stream;
-						durs.printOn(stream); });
-					//var longDursStr = String.streamContents({ arg stream;
-					//	durs.collect(_.asStringPrec(17)).printOn(stream); });
-					var numCyclesRequired = 1.0;
-					if (patternType == '@') {
-						replaceStr = "Pchain(Pbind('dur', Pseq(%, %)), Pseq(%, %))".format(longDursStr, numCyclesRequired, longElemStr, numCyclesRequired);
-					} {
-						replaceStr = "Pbind('%', Pseq(%, %), 'dur', Pseq(%, %))".format(patternType, longElemStr, numCyclesRequired, longDursStr, numCyclesRequired);
-					}
-				} {
-					if (elems[0].isKindOf(Association)) {
-						var pnsym = if (patternType == '@') { "PnsymRestEvent" } { "PnsymRest" };
-						elems[0] = "%(Pseq(%), ~%)".format(pnsym, elems.collect{|e| e.value}.join.cs, elems.first.key);
-					};
-
-					if (durs[0] === 1) {
-						// In the case of a single entry at the top level (and no array braces)
-						// just return a single value repeatedly, with no duration.
-						// If you want a single event that lasts one cycle, use
-						// "[0]" or "0@1"
-						if (patternType == '@') {
-							replaceStr = "Pn(%)".format(elems[0]);
-						} {
-							replaceStr = "Pbind('%', %)".format(patternType, elems[0]);
-						}
-					} {
-						if (patternType == '@') {
-							replaceStr = "Pchain(Pbind('dur', %), Pn(%))".format(durs[0], elems[0]);
-						} {
-							replaceStr = "Pbind('%', %, 'dur', %)".format(patternType, elems[0], durs[0]);
-						}
-					}
-				};
-			}.value;
 			// [curOffset, fullMatch.first, fullMatch.last, replaceStr].postln;
 			(fullMatch.last -> replaceStr).postln;
 			// [patternArray, replaceStr].postln;
@@ -2060,18 +2265,6 @@ BacalaoParser {
 		^(str.findRegexp(subCmd, offset).flop[1] ?? #[]).clump(3)
 	}
 
-	*findGlobalCmd { arg str, offset=0;
-		^(str.findRegexp(globalCmd, offset).flop[1] ?? #[]).clump(3)
-	}
-
-	*getCmdArgs { arg cmd, argStr, failArgType, offset=0;
-		var argArray;
-		var argRegex = cmdArgs.atFail(cmd, failArgType);
-		if (argRegex.notNil) {
-			argArray = argStr.findRegexp(argRegex, offset).flop[1];
-		}
-		^argArray ? #[]
-	}
 	*splitSimplify { arg str, splitChar = $ ;
 		^str.split(splitChar).collect(_.trim).reject(_.isEmpty);
 	}
@@ -2371,11 +2564,11 @@ Psine {
 		^((tPattern / Pfunc{thisThread.clock.beatsPerBar} / periodBars + phase) * 2pi).sin * mul + add;
 	}
 
-	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
+	*range { arg lo = -1.0, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psine.new(periodBars, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
 	}
 
-	*exprange { arg periodBars=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
+	*exprange { arg lo = 0.01, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psine.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
 	}
 }
@@ -2388,12 +2581,63 @@ Psaw {
 		^((tPattern / Pfunc{thisThread.clock.beatsPerBar} + phase).mod(periodBars) / periodBars * 2 - 1) * mul + add;
 	}
 
-	*range { arg periodBars=1, phase=0, lo = -1.0, hi=1.0, repeats=inf;
+	*range { arg lo = -1.0, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psaw.new(periodBars, phase, 1, 0, repeats).linlin(-1,1, lo,hi);
 	}
 
-	*exprange { arg periodBars=1, phase=0, lo = 0.01, hi=1.0, repeats=inf;
+	*exprange { arg lo = 0.01, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psaw.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
+	}
+}
+
+// Time-based random periodic function (using Simplex noise)
+Prpr {
+	*new { arg periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
+		var tPattern = Pif(Pfunc{|ev| ev[\time].notNil }, Pn(Pkey(\time), repeats), Ptime(repeats)) / Pfunc{thisThread.clock.beatsPerBar};
+		^tPattern.collect{ arg t;
+			var bar = t.value;
+			var x = bar.mod(periodBars) / periodBars;
+			Simplex.periodic(x, [variationRate * bar, 0] + offset, freqScale, octaves)
+		};
+	}
+
+	*range { arg lo=(-1.0), hi=1.0, periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
+		^Prpr(periodBars, offset, variationRate, freqScale, octaves, repeats).linlin(-1.2,1.2, lo,hi);
+	}
+
+	*exprange { arg lo=0.01, hi=1.0, periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
+		^Prpr(periodBars, offset, variationRate, freqScale, octaves, repeats).linexp(-1.2,1.2, lo,hi);
+	}
+
+	*durs{ arg durs=#[0.125,0.125,0.25,0.5], periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
+		^Pbind(\dur, Pindex(durs, Prpr.range(0, durs.size - 1e-3, periodBars, offset, variationRate, freqScale, octaves, repeats).floor))
+	}
+
+}
+
+// Random periodic function with N events per cycle (using Simplex noise)
+Pcycrand {
+	*new { arg periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
+		^{
+			var x = 0;
+			periodSteps = max(periodSteps, 1);
+			loop{
+				Simplex.periodic(x, [variationRate * x, 0] + offset, freqScale, octaves).yield;
+				x = x + periodSteps.reciprocal;
+			}
+		}.p
+	}
+
+	*range{ arg lo=(-1.0), hi=1.0, periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
+		^Pcycrand(periodSteps, offset, variationRate, freqScale, octaves).linlin(-1.2,1.2, lo,hi)
+	}
+
+	*exprange{ arg lo=0.01, hi=1.0, periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
+		^Pcycrand(periodSteps, offset, variationRate, freqScale, octaves).linexp(-1.2,1.2, lo,hi)
+	}
+
+	*durs{ arg durs=#[0.125,0.125,0.25,0.5], periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
+		^Pbind(\dur, Pindex(durs, Pcycrand.range(0, durs.size - 1e-3, periodSteps, offset, variationRate, freqScale, octaves).floor, inf))
 	}
 }
 
@@ -2401,6 +2645,10 @@ Psaw {
 PampRand {
 	*new { arg lo = 0.2, hi = 0.8, randSeed;
 		^Pbind(\amp, Per(lo, hi, randSeed));
+	}
+
+	*periodic { arg lo = 0.2, hi = 0.8, periodBars = 1, offset = #[63.11, -25.9], freqScale=0.2, octaves=3, repeats=inf;
+		^Pbind(\amp, Prpr.exprange(periodBars, offset, freqScale, octaves, lo, hi, repeats));
 	}
 }
 

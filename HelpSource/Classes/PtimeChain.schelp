@@ -1,0 +1,43 @@
+TITLE:: PtimeChain
+summary:: _short_description_here_
+categories:: Undocumented classes
+related:: Classes/SomeRelatedClass, Reference/SomeRelatedStuff
+
+DESCRIPTION::
+_put_long_description_here_
+
+
+First code examples: 
+
+code::
+_some_example_code_
+::
+
+CLASSMETHODS::
+
+METHOD:: isValidArg
+argument:: p
+
+METHOD:: new
+argument::  ... patterns
+
+
+INSTANCEMETHODS::
+
+METHOD:: <<
+argument:: aPattern
+
+METHOD:: patterns
+
+METHOD:: embedInStream
+argument:: inval
+
+METHOD:: storeOn
+argument:: stream
+
+
+EXAMPLES::
+
+code::
+_some_example_code_
+::

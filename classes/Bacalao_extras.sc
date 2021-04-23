@@ -50,6 +50,80 @@
 		Bacalao.clockWindow(server)
 	}
 
+	keyboard { arg trk;
+		var k = KeyboardWindow(61, 0, 0, Rect(80, 140, 1026, 152));
+		var kb = ();
+		var notes = ();
+		k.window.name = "Keyboard: " ++ trk.asSymbol;
+
+		// Bottom row
+		"zsxdcvgbhnjm".do{ arg ch, i;
+			kb.put(ch.toUpper.ascii, i + [48, 36]);
+		};
+		// Top row
+		"q2w3er5t6y7ui9o0p".do{ arg ch, i;
+			kb.put(ch.toUpper.ascii, i + [60, 72]);
+		};
+
+		k.userView.keyDownAction = { arg view, char, mods, unicode, keycode, key;
+			var note = kb[keycode];
+			// [char, mods, unicode, keycode, key].debug("down char, mods, unicode, keycode, key");
+			if (note.notNil) {
+				note = if (mods.isShift) { note[1] } { note[0] };
+				// if (k.activeNotes.includes(note).not) {
+				k.pressNote(note, 96);
+				// }
+			} {
+				if (keycode == 27) { // Esc
+					k.window.close;
+				};
+				if (keycode == 32) { // space
+					k.unPressAll;
+				};
+			}
+		};
+		k.userView.keyUpAction = { arg view, char, mods, unicode, keycode, key;
+			var note = kb[keycode];
+			// [char, mods, unicode, keycode, key].debug("up char, mods, unicode, keycode, key");
+			if (note.notNil) {
+				note = if (mods.isShift) { note[1] } { note[0] };
+				k.unPressNote(note, 96);
+			}
+		};
+		k.downAction = { arg ch, note, vel;
+			[ch,note,vel].debug("down ch,note,vel");
+			if (this.vst(trk).notNil) {
+				this.vst(trk).midi.noteOn(ch, note, vel);
+			} {
+				notes[note] ?? {
+					var inst = this.defGet(trk).instrument.value ?? \default;
+					var proxy = this.proxy(trk);
+					notes[note] = Synth(inst, [out: proxy.bus, freq: note.midicps, amp: vel/127], proxy.group);
+				};
+			};
+		};
+		k.upAction = { arg ch, note, vel;
+			// [ch,note,vel].debug("up ch,note,vel");
+			if (this.vst(trk).notNil) {
+				this.vst(trk).midi.noteOff(ch, note, vel);
+			} {
+				notes[note] !? {
+					var synth = notes[note];
+					synth.release(0.25);
+					notes[note] = nil;
+				};
+			};
+		};
+		k.userView.onClose = {
+			notes.do{ arg n;
+				n.release(0.25);
+			};
+			"closing keyboard '%'".format(trk).postln;
+		};
+
+		^k
+	}
+
 	*prSetupInstrumentSynths {
 
 		// Glen's "go-to" default sound
@@ -118,7 +192,105 @@
 			var sig = VarSaw.ar(freq * Rand(0.97, 1.03!n), 0, width);
 			sig = Splay.ar(sig, 0.5, center: pan);
 			sig = BLowPass.ar(sig, lpf, lpq);
-			sig * amp
+			Out.ar(out, sig * amp);
+		}).add;
+
+		SynthDef(\pluck, { arg out=0, freq=440, amp=0.1, pan=0;
+			var n = 2;
+			var inp = LFClipNoise.ar(2000!n, 0.7) * Env.perc(0.005, 0.05).ar * amp;
+			var sig = DWGPlucked.ar(freq * Rand(0.995,1.005!n), amp, 1, Rand(0.1, 0.9!n), amp.expexp(0.01,1, 30,0.3), LFDNoise1.kr(0.27!n).exprange(15,150), inp) * amp;
+			DetectSilence.ar(sig, 0.001, doneAction: Done.freeSelf);
+			OffsetOut.ar(out, Splay.ar(sig, 0.25, center: pan));
+		}).add;
+
+		SynthDef(\bell, { arg out=0, freq=440, amp=0.1, pan=0;
+			// http://math.mit.edu/~bush/wordpress/wp-content/uploads/2012/08/TibetanBowls.pdf
+			var freqs = (2..6).collect{ arg n; ((n.squared - 1).squared / (1 + n.squared.reciprocal)).sqrt } / 7.2.sqrt;
+			var amps = [0.04, 0.13, 0.08, 0.035, 0.075].normalizeSum;
+			var rings = freqs.size.collect(_.lincurve(0,freqs.size-1,15,2,2)) * Rand(0.7,1.4!freqs.size);
+			var input = LPF.ar(Env.perc(0.001,0.01).ar * PinkNoise.ar(0.5), 3000);
+			var n = 3;
+			var sig = Klank.ar(`[freqs, amps, rings], input, freq * Rand(0.99,1.01!n), Rand(-0.5,0.5!n)) * 0.7;
+			sig = Splay.ar(sig, 0.333, amp, pan);
+			DetectSilence.ar(sig, doneAction: Done.freeSelf);
+			OffsetOut.ar(out, sig);
+		}).add;
+
+		// From Roger Pibernat (aka loopier): based on his \superfm and \fmx7
+		// https://github.com/loopier/synthdefs/blob/master/synthdef-fmx7.scd
+		//
+		// 6-op FM synth (DX7-like) with envelope to be used with Pbind with EG levels and rates.
+		//
+		// Parameters affecting the overall synth
+		// \amp     Float    Overall synth amplitude
+		// \freq    Float    Overall synth frequency
+		// \att     |
+		// \dec     | ADSR envelope
+		// \sus     |
+		// \rel     |
+		//
+		// Parameters for each of the operators.  'N' represents the operator index as
+		// in \amp1 or \ratio1.
+		// \ampN    Float    Output level of each operator (N = operator index)
+		// \levelN  Float    Determines the max value of the amplitude or how much it can modulate.
+		// Each operator has a 4-stage envelope.  Values can be set for each of the stage's level and rate.
+		// Notice that 'rate' is 1/time, so higher values mean faster times.
+		// \eglevelNX  Float    Value for each of the envelope levels. N = operator index, X = envelope stage.
+		//                      E.g. \eglevel13 is setting the value of the 3rd stage of the first operator's envelope.
+		// \egtimeNX   Float    Value for each of the envelope times. N = operator index, X = envelope stage.
+		SynthDef(\fmx7, {
+			var amp = \amp.kr(1) * (-12.dbamp);
+			var out = \out.kr(0);
+			var pan = \pan.kr(0);
+			var gate = \gate.kr(1);
+			var freq = \freq.kr(440);
+			var dur = \dur.kr(1);
+			var env = EnvGen.ar(Env.adsr(\att.kr(0.01), \dec.kr(0.3), \sus.kr(0.5), \rel.kr(0.5)), gate, doneAction: Done.freeSelf);
+			// operator levels are independent of their amplitudes. They can be at full level but
+			// muted by the \amp parameter.
+			var levels = Array.fill(6, { |i| (\level++(i+1)).asSymbol.kr(1)});
+			// on startup first operator's amp is 1, the rest are 0 -- otherwise we'd hear nothing
+			var amps = Array.fill(6, { |i| (\amp++(i+1)).asSymbol.kr((i==0).asInteger)});
+			var ratios = Array.fill(6, { |i| (\ratio++(i+1)).asSymbol.kr(1)});
+			var detunes = Array.fill(6, { |i| (\detune++(i+1)).asSymbol.kr(0)});
+			var todo = if (false) {
+				// !!! TODO: add modwheel and LFO
+				// lfo sensitivity
+				var modsenses = Array.fill(6, { |i| (\modsens++(i+1)).asSymbol.kr(0)});
+				// selects between FM = 0 and AM = 1
+				var lfomode = \lfomode.kr(0);
+				var lfofreq = \lfofreq.kr(1);
+				var lfodepth = \lfodepth.kr(0.0);
+				var lfo = SinOsc.ar(lfofreq, 0, lfodepth);
+			};
+
+			var envs = Array.fill(6, { |i|
+				EnvGen.kr(
+					Env.new(
+						[0]++Array.fill(4, { |n| (\eglevel++(i+1)++(n+1)).asSymbol.kr(1) * levels[i] }),
+						[
+							(\egtime++(i+1)++1).asSymbol.kr(0.01),
+							(\egtime++(i+1)++2).asSymbol.kr(0.3),
+							(\egtime++(i+1)++3).asSymbol.kr(0.3),
+							(\egtime++(i+1)++4).asSymbol.kr(0.5),
+						]
+					),
+					gate: gate
+				);
+			});
+
+			var ctls = Array.fill(6, { |i|[
+				freq * ratios[i] + detunes[i],
+				0,
+				envs[i],
+			]});
+
+			var mods = Array.fill(6, { |i|
+				Array.fill(6, { |n| (\mod++(i+1)++(n+1)).asSymbol.kr(0)});
+			});
+
+			var sig = FM7.ar(ctls, mods) * amps;
+			Out.ar(out, Pan2.ar(sig.sum, pan, amp * env));
 		}).add;
 
 		//////////////////////////////////////////////////////////////////////

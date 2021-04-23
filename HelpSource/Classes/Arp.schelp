@@ -1,0 +1,96 @@
+TITLE:: Arp
+summary:: _short_description_here_
+categories:: Undocumented classes
+related:: Classes/SomeRelatedClass, Reference/SomeRelatedStuff
+
+DESCRIPTION::
+_put_long_description_here_
+
+
+First code examples: 
+
+code::
+_some_example_code_
+::
+
+CLASSMETHODS::
+
+METHOD:: excl
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: prGetArpOcts
+argument:: oct
+argument:: reverse
+
+METHOD:: order
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: prGetArpNotes
+argument:: notes
+argument:: reverse
+argument:: sort
+
+METHOD:: prOctaveShift
+argument:: value
+argument:: octaveShift
+argument:: key
+
+METHOD:: prArpPat
+argument:: notes
+argument:: oct
+argument:: reverse
+argument:: sort
+argument:: key
+
+METHOD:: incl
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: up
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: down
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: rand
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+METHOD:: prIncExc
+argument:: notes
+argument:: oct
+argument:: excl
+argument:: dur
+argument:: key
+
+METHOD:: rev
+argument:: notes
+argument:: oct
+argument:: dur
+argument:: key
+
+
+INSTANCEMETHODS::
+
+
+EXAMPLES::
+
+code::
+_some_example_code_
+::

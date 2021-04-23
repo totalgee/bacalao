@@ -220,9 +220,9 @@ BacalaoSpatialSettings {
 						// sig = directionFilter.value(sig, dir);
 						hoa = hoaEncodeMono.value(sig, 0, 0, gain, radius);
 					};
-					hoa = HOATransRotateXYZ.ar(hoaOrder, hoa, roll: roll);
-					hoa = HOATransRotateXYZ.ar(hoaOrder, hoa, pitch: pitch);
-					HOATransRotateAz.ar(hoaOrder, hoa, az: az);
+					hoa = HOATransRotateXYZ.ar(hoaOrder, hoa, roll: roll.circleRamp(0.1, -pi, pi));
+					hoa = HOATransRotateXYZ.ar(hoaOrder, hoa, pitch: pitch.circleRamp(0.1, -pi, pi));
+					HOATransRotateAz.ar(hoaOrder, hoa, az: az.circleRamp(0.1, -pi, pi));
 				};
 
 				SynthDef(\hoaDecode, { arg inBus, outBus = 0;
@@ -276,7 +276,7 @@ BacalaoSpatialSettings {
 								"Failed to load BinauralDecoder VST...spatialization won't work".error;
 								this.spatialFree;
 							}
-						}
+						}, multiThreading: true
 					);
 				}.value;
 			}
