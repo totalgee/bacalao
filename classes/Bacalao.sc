@@ -254,6 +254,7 @@ Bacalao {
 				var limitCtl = \limit.kr(limit).abs;
 				var mainOuts = In.ar(0, numChans);
 				var safeOuts = ReplaceBadValues.ar(mainOuts);
+				// Could also do HPF (20), Compander (0.7,1.05,0.4,0.01,0.01), BHiShelf (2400,1,3)
 
 				var resetTrig = Impulse.ar(0.5);
 				var peak = Peak.ar(safeOuts * (1 - resetTrig), resetTrig);
@@ -1032,6 +1033,23 @@ Bacalao {
 		^Pbind(\instrument, inst, \buf, buf, \length, origGrainDur, \rate, rate, \start, Pseq(starts), \dur, (1/pieces), \stretch, bars);
 	}
 
+	rhythm { arg hits, stepsPerBar = 8, bars = 1, ampBase = 0.5, timeKey = \dur;
+		var totalBeats = stepsPerBar * bars;
+		var hitsAndAmps, amps, startTimes, deltaTimes;
+		hitsAndAmps = [[0, \rest]] ++ hits.collect{ |h|
+			if (h.isKindOf(Emphasis)) {
+				[ h.value - 1 % totalBeats, h.emphasis * ampBase.value ]
+			} {
+				[h - 1 % totalBeats, ampBase.value]
+			};
+		}.sort{ |a, b| a[0] < b[0] };
+		#hits, amps = hitsAndAmps.debug("hitsAndAmps").flop;
+		startTimes = hits / stepsPerBar ++ bars;
+		deltaTimes = startTimes.differentiate.drop(1);
+		^Pbind(timeKey, Pseq(deltaTimes.debug("deltaTimes")),
+			\amp, Pseq(amps.debug("amps")));
+	}
+
 	prVstPrint { arg message, conditionFunc, onlyWithPresets, extraVstPluginSearchPath;
 		if (Bacalao.prVSTPluginInstalled.not) { ^this };
 		server.waitForBoot{
@@ -1284,7 +1302,7 @@ Bacalao {
 //						} {
 //							Group.after(server.defaultGroup).register
 //						};
-						
+
 						var previousGroup = if (spatial.notNil and: { spatial.decoderGroup.notNil }) {
 							spatial.decoderGroup
 						} {
@@ -1757,15 +1775,19 @@ BacalaoParser {
 	}
 
 	*prResolvePatternSyntax { arg pair;
-		var key = this.resolveAbbrev(pair[0]);
 		var value = pair[1];
+		var key, optVariableName;
+		#key, optVariableName = pair[0].asString.split($~);
+		key = this.resolveAbbrev(key);
+		optVariableName = optVariableName ? "";
+		// Note that we do support key~dict key names here,
+		// but not (yet) the '@~dict' form for Event patterns
+		// that are supported by the Bacalao interpreter/parser.
 		^case
 		{ value.isString } {
-			var optVariableName = "";
 			this.prReplaceStringPattern(key, optVariableName, value).interpret.patternpairs;
 		}
 		{ value.isArray and: value.first.class == Char } {
-			var optVariableName = "";
 			this.prReplaceCharPattern(key, optVariableName, value.join).interpret.patternpairs;
 		} {
 			[key, value]
@@ -2571,6 +2593,10 @@ Psine {
 	*exprange { arg lo = 0.01, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psine.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
 	}
+
+	*curverange { arg lo = 0.01, hi=1.0, curve = -4, periodBars=1, phase=0, repeats=inf;
+		^Psine.new(periodBars, phase, 1, 0, repeats).lincurve(-1,1, lo,hi, curve);
+	}
 }
 
 Psaw {
@@ -2587,6 +2613,10 @@ Psaw {
 
 	*exprange { arg lo = 0.01, hi=1.0, periodBars=1, phase=0, repeats=inf;
 		^Psaw.new(periodBars, phase, 1, 0, repeats).linexp(-1,1, lo,hi);
+	}
+
+	*curverange { arg lo = 0.01, hi=1.0, curve = -4, periodBars=1, phase=0, repeats=inf;
+		^Psaw.new(periodBars, phase, 1, 0, repeats).lincurve(-1,1, lo,hi, curve);
 	}
 }
 
@@ -2607,6 +2637,10 @@ Prpr {
 
 	*exprange { arg lo=0.01, hi=1.0, periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
 		^Prpr(periodBars, offset, variationRate, freqScale, octaves, repeats).linexp(-1.2,1.2, lo,hi);
+	}
+
+	*curverange { arg lo=0.0, hi=1.0, curve = -4, periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
+		^Prpr(periodBars, offset, variationRate, freqScale, octaves, repeats).lincurve(-1.2,1.2, lo,hi, curve);
 	}
 
 	*durs{ arg durs=#[0.125,0.125,0.25,0.5], periodBars=1, offset=#[12.34, 23.45], variationRate=0.005, freqScale=0.2, octaves=3, repeats=inf;
@@ -2634,6 +2668,10 @@ Pcycrand {
 
 	*exprange{ arg lo=0.01, hi=1.0, periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
 		^Pcycrand(periodSteps, offset, variationRate, freqScale, octaves).linexp(-1.2,1.2, lo,hi)
+	}
+
+	*curverange{ arg lo=0.0, hi=1.0, curve = -4, periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
+		^Pcycrand(periodSteps, offset, variationRate, freqScale, octaves).lincurve(-1.2,1.2, lo,hi, curve)
 	}
 
 	*durs{ arg durs=#[0.125,0.125,0.25,0.5], periodSteps=8, offset=#[13, 14], variationRate=0.005, freqScale=0.2, octaves=3;
@@ -2673,6 +2711,21 @@ Per {
 	*new { arg lo = 0.0001, hi = 1.0, randSeed, length = inf;
 		var p = Pexprand(lo, hi, length);
 		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p };
+	}
+}
+
+// Envelope-lookup random generator, similar to Pmeanrand but with adjustable slope (and mean).
+// Set negative slope to "stay away" from the mean instead of staying close to it.
+// If you set a custom "mean", you can make it asymmetric, so the peak
+// (or valley) is shifted (but always within the range lo..hi).
+// See: https://scsynth.org/t/what-is-the-opposite-of-pmeanrand/4140
+Pmeanrand2 {
+	*new { arg lo = 0.0, hi = 1.0, slope = 2, mean = nil;
+		var meanParam, env;
+		mean = (mean ?? { lo + hi / 2 }).clip(lo, hi);
+		meanParam = mean.linlin(lo, hi, 0, 1);
+		env = Env([lo, mean, hi], [meanParam, 1.0 - meanParam], [slope.neg, slope]);
+		^Pfunc{ env.at(1.0.rand) };
 	}
 }
 

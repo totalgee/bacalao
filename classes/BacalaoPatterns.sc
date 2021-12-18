@@ -269,6 +269,111 @@ PmulOrSet : Pset {
 	}
 }
 
+Emphasis {
+	var <>value;
+	var <>emphasis;
+	const baseEmphasis = 1.4142;
+
+	*new { arg value, emphasis = baseEmphasis;
+		^super.newCopyArgs(value, emphasis.value);
+	}
+
+	+ { arg aNumber, adverb;
+		if (aNumber.isKindOf(Emphasis)) {
+			^Emphasis.new(value + aNumber.value, max(emphasis, aNumber.emphasis));
+		} {
+			^aNumber.performBinaryOpOnEmphasis('+', this)
+		}
+	}
+	- { arg aNumber, adverb;
+		if (aNumber.isKindOf(Emphasis)) {
+			^Emphasis.new(value - aNumber.value, max(emphasis, aNumber.emphasis));
+		} {
+			^aNumber.performBinaryOpOnEmphasis('-', this)
+		}
+	}
+	* { arg aNumber, adverb;
+		if (aNumber.isKindOf(Emphasis)) {
+			^Emphasis.new(value * aNumber.value, max(emphasis, aNumber.emphasis));
+		} {
+			^aNumber.performBinaryOpOnEmphasis('*', this)
+		}
+	}
+	/ { arg aNumber, adverb;
+		if (aNumber.isKindOf(Emphasis)) {
+			^Emphasis.new(value / aNumber.value, max(emphasis, aNumber.emphasis));
+		} {
+			^aNumber.performBinaryOpOnEmphasis('/', this)
+		}
+	}
+	// mod
+	// div
+	// pow
+
+	performBinaryOpOnSeqColl { arg aSelector, aSeqColl, adverb;
+		^aSeqColl.collect({ arg item;
+			this.perform(aSelector, item, adverb)
+		})
+	}
+	performBinaryOpOnSimpleNumber { arg aSelector, aNumber, adverb;
+		^Emphasis.new(aNumber, emphasis).perform(aSelector, this, adverb)
+	}
+	performBinaryOpOnEmphasis { arg aSelector, aNumber, adverb;
+		^error("Math operation failed.\n")
+	}
+
+}
+
++SimpleNumber {
+	performBinaryOpOnEmphasis { arg aSelector, emph, adverb;
+		^emph.perform(aSelector, Emphasis.new(this, emph.emphasis), adverb)
+	}
+}
+
++SequenceableCollection {
+	performBinaryOpOnEmphasis { arg aSelector, emph, adverb;
+		^this.collect({ arg item;
+			emph.perform(aSelector, item, adverb)
+		})
+	}
+}
+
++Number {
+	e { arg emphasis = 1.5;
+		^Emphasis(this, emphasis)
+	}
+	f {
+		^Emphasis(this, 2.sqrt)
+	}
+	ff {
+		^Emphasis(this, 2.sqrt ** 2)
+	}
+	p {
+		^Emphasis(this, 0.5.sqrt)
+	}
+	pp {
+		^Emphasis(this, 0.5.sqrt ** 2)
+	}
+}
+
++Array {
+	e { arg emphasis = 1.5;
+		^this.collect(Emphasis(_, emphasis))
+	}
+	f {
+		^this.collect(Emphasis(_, 2.sqrt))
+	}
+	ff {
+		^this.collect(Emphasis(_, 2.sqrt ** 2))
+	}
+	p {
+		^this.collect(Emphasis(_, 0.5.sqrt))
+	}
+	pp {
+		^this.collect(Emphasis(_, 0.5.sqrt ** 2))
+	}
+}
+
 +String {
 	chars {
 		^this.as(Array)
@@ -282,6 +387,26 @@ PmulOrSet : Pset {
 
 	loop {
 		^Pseq(this, inf)
+	}
+
+	anticipate { arg prob = 0.7, offset = 0.5;
+		^this.collect{ |b|
+			if (prob.coin) {
+				b
+			} {
+				var o = offset.value; [-1 * o, 0] + b
+			}
+		}.flatten
+	}
+
+	lag { arg prob = 0.7, offset = 0.125;
+		^this.collect{ |b|
+			if (prob.coin) {
+				b
+			} {
+				b + offset.value
+			}
+		}
 	}
 
 	pb {
@@ -557,6 +682,31 @@ PmulOrSet : Pset {
 		^dur
 	}
 
+}
+
++Pbind {
+	find { arg key;
+		patternpairs.pairsDo { |u,x,i|
+			if(u == key) { ^i }
+		};
+		^nil
+	}
+
+	set { arg ...args;
+		args.pairsDo { |key, val|
+			var i = this.find(key);
+			if (i.notNil) {
+				if (val.isNil) {
+					patternpairs.removeAt(i);
+					patternpairs.removeAt(i);
+				} {
+					patternpairs[i+1] = val
+				}
+			}{
+				patternpairs = patternpairs ++ [key, val];
+			}
+		}
+	}
 }
 
 // This overload should be removed (replaced by regular prNext) once the

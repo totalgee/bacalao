@@ -267,7 +267,7 @@
 	fxDownsample { arg sampleRate = 8000.0;
 		^{ arg in;
 			var sr = \samplerate.kr(sampleRate).clip(1, SampleRate.ir);
-			Latch.ar(in, Impulse.ar(sr)).lag(sr.reciprocal*2)
+			Lag.ar(Latch.ar(in, Impulse.ar(sr)), sr.reciprocal*2)
 		}
 	}
 
