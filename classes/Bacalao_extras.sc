@@ -38,7 +38,7 @@
 		Button(clk.window, Rect(80 - 20, 5, 40, 20)).string_("Mic").action_{ toggleMic.() };
 
 		// publicWin = Window("Timer").bounds_(Rect(1696, 2020, 220, 100)).front;
-		publicWin = Window("Timer").bounds_(Rect(publicWinTopRight.x - 220, publicWinTopRight.y - 100, 220, 100)).alwaysOnTop_(true).front;
+		publicWin = Window("Timer").bounds_(Rect(privateTopRight.x - 220, privateTopRight.y - 200, 220, 100)).alwaysOnTop_(true).front;
 		timeText = StaticText(publicWin, Rect(10,10, 200,80)).front.font_(Font("Arial", 48)).align_(\left);
 		Tdef(\publicClock, { loop { 1.wait; {timeText.string = clk.cursecs.asTimeString.keep(8)}.defer } }).play(quant: 1);
 		publicWin.onClose_{ Tdef(\publicClock).clear; "Stopped updating public clock".postln };

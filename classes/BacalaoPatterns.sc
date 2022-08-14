@@ -385,6 +385,10 @@ Emphasis {
 		^Pseq(this, repeats, offset)
 	}
 
+	par { arg repeats=1;
+		^Ppar(this, repeats)
+	}
+
 	loop {
 		^Pseq(this, inf)
 	}
@@ -429,6 +433,33 @@ Emphasis {
 		};
 		^PtimeChain(*timeChainArgs)
 	}
+
+}
+
++String {
+
+	bparse { arg key, repeats = 1, optVariableName;
+		var pairs;
+		optVariableName = optVariableName ? "";
+		pairs = BacalaoParser.prReplaceStringPattern(key, optVariableName, this).interpret.patternpairs;
+		^Pbind(*pairs.clump(2).collect{ arg elem;
+			var key, value;
+			#key, value = elem;
+			[key, Pn(value, repeats)]
+		}.flatten);
+	}
+
+	cparse { arg key, repeats = 1, optVariableName;
+		var pairs;
+		optVariableName = optVariableName ? "";
+		pairs = BacalaoParser.prReplaceCharPattern(key, optVariableName, this).interpret.patternpairs;
+		^Pbind(*pairs.clump(2).collect{ arg elem;
+			var key, value;
+			#key, value = elem;
+			[key, Pn(value, repeats)]
+		}.flatten);
+	}
+
 }
 
 +Pattern {
