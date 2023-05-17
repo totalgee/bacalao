@@ -466,6 +466,22 @@ Emphasis {
 
 }
 
++Symbol {
+
+	// Interop with Ziva (https://github.com/loopier/ziva/)
+	<-> { arg pattern, adverb;
+		if (this.respondsTo('prSynthOrSample')) {
+			pattern = case
+			{ pattern.isKindOf(String) } { pattern.bparse(adverb ? \degree, inf) }
+			{ pattern.isKindOf(Symbol) } { pattern.asString.cparse(adverb ? \degree, inf) }
+			{ pattern };
+			^Pchain(this.prSynthOrSample, pattern);
+		} {
+			Error("Ziva needs to be installed to use '<->' -- use: Quarks.install(\"https://github.com/loopier/ziva/\")").throw;
+		}
+	}
+}
+
 +Pattern {
 
 	scramble { arg randSeed, dur;
