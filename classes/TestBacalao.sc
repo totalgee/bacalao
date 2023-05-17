@@ -181,6 +181,11 @@ TestBacalao : UnitTest {
 		this.compareEvents(this.prPat(str), expected, 9, "bar dividers");
 		str = "deg\"[[1 2 3]@2 [4 5] 6*3]@4\"";
 		this.compareEvents(this.prPat(str), expected, 9, "equivalent without bar dividers");
+
+		str = "drum\"bd sd \\oh \\hh*2\"";
+		expected = Pbind('drum', Pseq(['bd', 'sd', 'oh', 'hh', 'hh'], 1),
+			'dur', Pseq([1/4, 1/4, 1/4, 1/8, 1/8], 1));
+		this.compareEvents(this.prPat(str), expected, 6, "drum keys");
 	}
 
 	test_parserVariables {
@@ -810,10 +815,10 @@ TestBacalao : UnitTest {
 
 		if (\ChordSymbol.asClass.notNil) {
 			var expected = [
-				(degree: 0, dur: 0.25, beat: 0.0),
-				(degree: 0, dur: 0.25, beat: 0.25),
+				(degree: [0, 2, 4], dur: 0.25, beat: 0.0),
+				(degree: [0, 2, 4], dur: 0.25, beat: 0.25),
 				(degree: [6, 7, 9, 11], dur: 0.5, beat: 0.5),
-				(degree: 0, dur: 0.25, beat: 0.0),
+				(degree: [0, 2, 4], dur: 0.25, beat: 0.0),
 			];
 			var events = this.prPlayAndGetEvents(b,
 				this.prPat("deg\"C*2 CM7_a\""),

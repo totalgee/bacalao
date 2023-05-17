@@ -543,7 +543,7 @@
 		// SOStom -------
 		// http://www.soundonsound.com/sos/Mar02/articles/synthsecrets0302.asp
 
-		SynthDef(\kick_electro, { |out = 0, pan = 0, amp = 0.3|
+		SynthDef(\kick_electro, { |out = 0, pan = 0, amp = 0.3, dist = 0|
 			var body, bodyFreq, bodyAmp;
 			var pop, popFreq, popAmp;
 			var click, clickAmp;
@@ -565,12 +565,15 @@
 			snd = body + pop + click;
 			snd = snd.tanh;
 
+			// Added distortion
+			snd = (snd * 30).softclip * dist + snd;
+
 			Out.ar(out, Pan2.ar(snd, pan, amp));
 			//By Nathan Ho aka Snappizz
 			//http://sccode.org/1-523
 		}).add;
 
-		SynthDef(\snare_electro, { |out = 0, pan = 0, amp = 0.3|
+		SynthDef(\snare_electro, { |out = 0, pan = 0, amp = 0.3, dist = 0|
 			var pop, popAmp, popFreq;
 			var noise, noiseAmp;
 			var snd;
@@ -585,6 +588,9 @@
 			noise = BPF.ar(WhiteNoise.ar, 810, 1.6) * noiseAmp;
 
 			snd = (pop + noise) * 1.3;
+
+			// Added distortion
+			snd = (snd * 30).softclip * dist + snd;
 
 			Out.ar(out, Pan2.ar(snd, pan, amp));
 			//By Nathan Ho aka Snappizz

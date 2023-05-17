@@ -105,28 +105,63 @@ BacalaoParser {
 	*prResolveVariables { arg elems, patternType, optVariableName;
 		var resolveChord = { arg elem;
 			// If we've got the ChordSymbol Quark installed, try to lookup as a chord
-			if (\ChordSymbol.asClass.notNil and: { elem.first.isUpper }) {
+			if (\ChordSymbol.asClass.notNil
+				and: { elem.first.isUpper }
+				and: { elem.beginsWith("Rest").not }
+				and: { elem.beginsWith("ALTERNATE").not }) {
+
+				var elemSym = elem.asSymbol;
+				var scale = Scale.major;
 				switch (patternType)
 				{ \degree } {
-					var notes = elem.asSymbol.asNoteOrChord;
-					if (notes != elem.asSymbol) {
-						var degs = notes.asArray.collect { |n|
-							// TODO when next version of SC comes out use keyToDegree
-							var deg = n.keyToDegree2(Scale.major, 12);
-							if (deg == deg.round) { deg.asInteger } { deg }
-						}; //.debug("ChordSymbol")
+					var degs = ChordSymbol.asDegrees(elemSym, scale);
+					if (degs == elemSym) {
+						degs = NoteSymbol.asDegree(elemSym, scale);
+					};
+					if (degs != elemSym) {
 						if (degs.size > 1) { degs } { degs.first }
 					} {
 						elem
 					}
 				}
+				{ \note } {
+					var notes = ChordSymbol.asNotes(elemSym);
+					if (notes == elemSym) {
+						notes = NoteSymbol.asNote(elemSym);
+					};
+					if (notes != elemSym) {
+						if (notes.size > 1) { notes } { notes.first }
+					} {
+						elem
+					}
+				}
+				{ \midinote } {
+					var midinotes = NoteSymbol.asNote(elemSym);
+					if (midinotes == elemSym) {
+						midinotes = ChordSymbol.asNotes(elemSym);
+						if (midinotes != elemSym and: { midinotes.first < scale.pitchesPerOctave }) {
+							// If someone entered a chord without specifying an octave, shift near middle C
+							midinotes = midinotes + 60;
+						}
+					};
+					if (midinotes != elemSym) {
+						if (midinotes.size > 1) { midinotes } { midinotes.first }
+					} {
+						elem
+					}
+				}
 				{
-					var notes = elem.asSymbol.asNoteOrChord;
+					var notes = elem.asSymbol.asNoteOrChord.debug("asNoteOrChord");
 					if (notes.size > 1) { notes } { notes.first }
 				} //.debug("ChordSymbol") };
 			} {
-				// Stick with the original element, there is no lookup
-				elem
+				if (patternType == \drum) {
+					if (elem[0] == $\\) { elem = elem.drop(1) };
+					elem.asSymbol.cs
+				} {
+					// Stick with the original element, there is no lookup
+					elem
+				}
 			}
 		};
 

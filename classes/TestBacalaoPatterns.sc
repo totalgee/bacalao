@@ -50,7 +50,7 @@ TestBacalaoPatterns : UnitTest {
 
 
 		p = Pbind(\degree, Pseq((0..3)), \dur, 0.25, \amp, Pseq((1..4) / 4)); // degree and amp Pbind
-		results = p.scramble(Pseq([123, 456], 1)).asStream.nextN(9, ());
+		results = p.scramble([123, 456].pseq).asStream.nextN(9, ());
 		expected = [
 			(degree: 1, dur: 0.25, amp: 0.5),
 			(degree: 3, dur: 0.25, amp: 1.0),

@@ -121,6 +121,13 @@ PtimeChain : Pattern {
 
 	<< { arg aPattern;
 		// time-based pattern key merging
+		if (this.isKindOf(Ppar)) {
+			var parChains = this.list.collect{ arg parPattern;
+				PtimeChain(parPattern, aPattern)
+			};
+			this.list = parChains;
+			^this
+		};
 		^PtimeChain(this, aPattern)
 	}
 

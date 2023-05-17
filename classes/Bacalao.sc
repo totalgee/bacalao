@@ -1,6 +1,7 @@
 Bacalao {
 	classvar parse;
 	const numVstChannels = 2;
+	const defaultVstPath = "C:/Program Files/Common Files/VST2";
 	classvar <preProcessorVariables = 'bacalaoPreProcessorVariables';
 	var <clock;
 	var <server;
@@ -174,6 +175,9 @@ Bacalao {
 					}
 				};
 				Bacalao.varSet('mn', mn);
+
+				// Some aliases for chord names
+				ChordSymbol.shapes.put('maj7', ChordSymbol.shapes.major7);
 			}
 		}.value;
 	}
@@ -362,8 +366,12 @@ Bacalao {
 		Event.addEventType(\note_and_pset, { |server|
 			handleProxySetParams.();
 
-			~type = \note;
-			Event.eventTypes[\note].value(server);
+			if (~drum.notNil) {
+				~type = \drum;
+			} {
+				~type = \note;
+			};
+			Event.eventTypes[~type].value(server);
 			// currentEnvironment.play;
 		});
 	}
@@ -606,14 +614,22 @@ Bacalao {
 		});
 	}
 
-	start {
+	*start {
 		thisProcess.interpreter.preProcessor = BacalaoParser.preProcess(_);
 		"Bacalao pattern parsing enabled".postln;
 	}
 
-	stop {
+	start {
+		Bacalao.start;
+	}
+
+	*stop {
 		thisProcess.interpreter.preProcessor = nil;
 		"Bacalao pattern parsing disabled".postln;
+	}
+
+	stop {
+		Bacalao.stop;
 	}
 
 	tempo {
@@ -1072,18 +1088,18 @@ Bacalao {
 		}
 	}
 
-	vstPrintInstruments { arg onlyWithPresets = true, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
+	vstPrintInstruments { arg onlyWithPresets = true, extraVstPluginSearchPath = defaultVstPath;
 		this.prVstPrint("VST Instruments", _.synth, onlyWithPresets, extraVstPluginSearchPath);
 	}
 
-	vstPrintEffects { arg onlyWithPresets = true, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
+	vstPrintEffects { arg onlyWithPresets = true, extraVstPluginSearchPath = defaultVstPath;
 		this.prVstPrint("VST Effects", _.synth.not, onlyWithPresets, extraVstPluginSearchPath);
 	}
 
 	// Add a VST filter effect (needs array index > 0) to modify the NodeProxy
 	// e.g. b.vstFx(\drum -> 10, "Reaktor 6", "goldFinalizer"); { arg in; JPverb.ar(in, 3) }, 0.3);
 	// You can clear fx in a slot with: b.fx(\drum -> 10);
-	vstFx { arg trkNameAndIndex, vstName, programPath, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit", wet=1;
+	vstFx { arg trkNameAndIndex, vstName, programPath, extraVstPluginSearchPath = defaultVstPath, wet=1;
 		var trkName, index;
 		if (Bacalao.prVSTPluginInstalled.not) { ^this };
 
@@ -1147,7 +1163,7 @@ Bacalao {
 		}
 	}
 
-	vstInit { arg trkName, vstName, programPath, bankAndProgram, extraVstPluginSearchPath = "C:/Program Files/Native Instruments/VSTPlugins 64 bit";
+	vstInit { arg trkName, vstName, programPath, bankAndProgram, extraVstPluginSearchPath = defaultVstPath;
 		if (Bacalao.prVSTPluginInstalled.not) { ^this };
 		//programPath = programPath !? { VSTPlugin.prResolvePath(programPath, false).postln };
 		server.waitForBoot{
@@ -1447,6 +1463,15 @@ Bacalao {
 		^(trkName.asString ++ $/ ++ (slot ? 0) ++ $/ ++ server.name).asSymbol;
 	}
 
+	pdef { arg trkName, slot = 0;
+		var pdefName;
+		if (trkName.isKindOf(Association)) {
+			#trkName, slot = [trkName.key.asSymbol, trkName.value];
+		};
+		pdefName = this.prGetPdefName(trkName, slot);
+		^Pdef(pdefName);
+	}
+
 	prChangePattern { arg trkName, slot, pattern, loopDur, patternQuant, role, includeMask = true;
 		// Pdef doesn't have a per-Server ProxySpace, so
 		// we make up a "unique" name by combining the track name
@@ -1474,8 +1499,11 @@ Bacalao {
 			if (includeMask) {
 				pattern = pattern << Pbind(\mask, 1);
 			};
-			if (defaultDict.notNil) {
-				pattern = pattern << defaultDict << globalDefaultDict;
+			if (defaultDict.notEmpty) {
+				pattern = pattern <> defaultDict;
+			};
+			if (globalDefaultDict.notEmpty) {
+				pattern = pattern <> globalDefaultDict;
 			};
 		};
 

@@ -460,6 +460,10 @@ Emphasis {
 		}.flatten);
 	}
 
+	evparse { arg variableName = "samp", repeats = 1;
+		^BacalaoParser.prReplaceStringPattern("@", variableName, this).interpret;
+	}
+
 }
 
 +Pattern {
@@ -467,7 +471,7 @@ Emphasis {
 	scramble { arg randSeed, dur;
 		var p = Parrop(this, _.scramble, dur);
 		^if (randSeed.notNil) {
-			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(randSeed, p) }
+			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(Pfunc(randSeed.asStream), p) }
 		} {
 			p
 		}
@@ -477,7 +481,7 @@ Emphasis {
 		var arrayRandFunc = { arg x; Array.fill(x.size, { x.choose} ) };
 		var p = Parrop(this, arrayRandFunc, dur);
 		^if (randSeed.notNil) {
-			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(randSeed, p) }
+			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(Pfunc(randSeed.asStream), p) }
 		} {
 			p
 		}
@@ -500,7 +504,7 @@ Emphasis {
 		};
 		var p = Parrop(this, arrayRandSwapFunc, dur);
 		^if (randSeed.notNil) {
-			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(randSeed, p) }
+			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(Pfunc(randSeed.asStream), p) }
 		} {
 			p
 		}
@@ -574,8 +578,12 @@ Emphasis {
 
 	// Modify an Event Pattern to return Rests based on a weighted coin toss
 	degrade { arg prob = 0.5, randSeed;
-		var p = this.collect{ |ev| prob.coin.if{ ev } { ev.copy.put(\mask, Rest(0)) }};
-		^if (randSeed.notNil) { Pseed(Pn(randSeed, 1), p) } { p }
+		var p = this.collect{ |ev| prob.value.coin.if{ ev } { ev.copy.put(\mask, Rest(0)) }};
+		^if (randSeed.notNil) {
+			if (randSeed.isNumber) { Pseed(Pn(randSeed, 1), p) } { Pseed(Pfunc(randSeed.asStream), p) }
+		} {
+			p
+		}
 	}
 
 	// Apply a function (or a replacement pattern) once every N bars
@@ -641,9 +649,9 @@ Emphasis {
 		} {
 			funcOrAlternatePattern
 		};
-		^Preduce({ |x,y| if (prob.coin, x, y) }, alternate, this);
+		^Preduce({ |x,y| if (prob.value.coin, x, y) }, alternate, this);
 		// Old version, that allowed patterns to get out of phase
-		// ^Pif( Pfunc{ prob.coin }, alternate, this);
+		// ^Pif( Pfunc{ prob.value.coin }, alternate, this);
 	}
 
 	always { arg funcOrAlternatePattern;
