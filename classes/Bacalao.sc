@@ -1022,11 +1022,22 @@ Bacalao {
 		}
 	}
 
+	*prGetTempoClock { arg clk, methodName;
+		if (clk.respondsTo(\clock)) {
+			clk = clk.clock;
+		};
+		if (clk.isKindOf(TempoClock).not) {
+			Error("Bacalao.% requires a TempoClock".format(methodName)).throw
+		};
+		^clk
+	}
+
 	// Chop a Buffer into a number of pieces, returning a Pbind with the appropriate
 	// start, length and rate parameters (appropriate for use with Bacalao patterns).
 	// If you leave desiredBars and/or desiredRate unspecified, values will be
 	// calculated to round to the nearest bar/cycle.
-	chop { arg bufOrName, pieces = 8, desiredBars, desiredRate, inst;
+	*chop { arg clk, bufOrName, pieces = 8, desiredBars, desiredRate, inst;
+		var clock = Bacalao.prGetTempoClock(clk, 'chop');
 		var buf = if (bufOrName.isKindOf(Buffer)) {
 			bufOrName
 		} {
@@ -1047,6 +1058,10 @@ Bacalao {
 		};
 		// Here, the 'dur' should be in cycles, not beats
 		^Pbind(\instrument, inst, \buf, buf, \length, origGrainDur, \rate, rate, \start, Pseq(starts), \dur, (1/pieces), \stretch, bars);
+	}
+
+	chop { arg bufOrName, pieces = 8, desiredBars, desiredRate, inst;
+		^Bacalao.chop(this, bufOrName, pieces, desiredBars, desiredRate, inst)
 	}
 
 	rhythm { arg hits, stepsPerBar = 8, bars = 1, ampBase = 0.5, timeKey = \dur;
