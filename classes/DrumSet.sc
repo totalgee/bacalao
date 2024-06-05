@@ -9,6 +9,9 @@ DrumSet {
 			var rate = \rate.kr(1) * (freq / 60.midicps);
 			var start = \start.kr(0);
 			var length = \length.kr(1);
+			var lpf = \lpf.kr(12000);
+			var lpq = \lpq.kr(1);
+			var drive = \drive.kr(1);
 			var sig = PlayBuf.ar(numChannels, buf, rate * BufRateScale.kr(buf), 1, start * BufSampleRate.kr(buf), 1);
 			var fade = 0.01;
 			var timeToEnd = (BufDur.kr(buf) - start - fade).max(0);
@@ -20,6 +23,8 @@ DrumSet {
 				EnvGen.ar(Env.linen(fade, (segmentDur - fade).max(0), fade), doneAction: Done.freeSelf) *
 				EnvGen.ar(Env.asr(fade, 1, fade), \cutGate.kr(1), doneAction: Done.freeSelf);
 			};
+			sig = BLowPass.ar(sig, lpf, lpq);
+			sig = (sig * drive).softclip;
 			sig * env;
 		};
 
@@ -33,22 +38,24 @@ DrumSet {
 				if (~drum.asString.beginsWith("Rest(").not) {
 					var drum = ~drum.asSymbol;
 					var drumEntry = ~drumSet.drumDict[drum];
-					var buf = drumEntry[\buf];
-					var cutGroupName = drumEntry[\cutGroup];
-					var parentGroup = ~group.value;
-					var cutGroupDict = {
-						if (~drumSet.cutGroupDicts[parentGroup].isNil) {
-							~drumSet.cutGroupDicts[parentGroup] = ();
-						};
-						~drumSet.cutGroupDicts[parentGroup]
-					}.value;
-					var group = cutGroupDict[cutGroupName];
-					if (group.isNil) {
-						cutGroupDict[cutGroupName] = group = Group(parentGroup ?? { ~proxy.group.value });
-						~drumSet.cutGroupDicts[parentGroup] = cutGroupDict;
-						"Created % for cut group % inside %\n".postf(group, cutGroupName, group.group);
-					};
+					var buf = drumEntry !? { drumEntry[\buf] };
 					if (buf.notNil) {
+						var cutGroupName = drumEntry[\cutGroup];
+						var parentGroup = ~group.value ?? { server.defaultGroup };
+						var cutGroupDict = {
+							if (~drumSet.cutGroupDicts[parentGroup].isNil) {
+								~drumSet.cutGroupDicts[parentGroup] = ();
+							};
+							~drumSet.cutGroupDicts[parentGroup]
+						}.value;
+						var group = cutGroupDict[cutGroupName];
+						if (group.isNil) {
+							cutGroupDict[cutGroupName] = group = Group(parentGroup ?? { ~proxy.group.value });
+							~drumSet.cutGroupDicts[parentGroup] = cutGroupDict;
+							"Created % for cut group % inside %\n".postf(group, cutGroupName, group.group);
+							// "Forget" the old Group on Cmd-period
+							CmdPeriod.doOnce { cutGroupDict[cutGroupName] = nil };
+						};
 						server.bind{
 							group.set(\cutGate, 0);
 							~type = \note;
@@ -57,6 +64,8 @@ DrumSet {
 							~group = group;
 							Event.eventTypes[\note].value(server);
 						};
+					} {
+						"drum '%' not defined in DrumSet".format(drum).warn;
 					}
 				}
 			} {
@@ -95,6 +104,8 @@ DrumSet {
 			cutGroupDict[cutGroupName] = group = Group();
 			cutGroupDicts[parentGroup] = cutGroupDict;
 			"Created % for cut group % inside %\n".postf(group, cutGroupName, group.group);
+			// "Forget" the old Group on Cmd-period
+			CmdPeriod.doOnce { cutGroupDict[cutGroupName] = nil };
 		};
 		if (args.size == 1) {
 			// So we also support a single Event arg

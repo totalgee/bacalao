@@ -380,6 +380,12 @@ Emphasis {
 	}
 }
 
++Object {
+	pn { arg repeats=1;
+		^Pn(this, repeats)
+	}
+}
+
 +Array {
 	pseq { arg repeats=1, offset=0;
 		^Pseq(this, repeats, offset)
@@ -393,12 +399,16 @@ Emphasis {
 		^Pseq(this, inf)
 	}
 
+	place {
+		^Ppatlace(this, inf)
+	}
+
 	anticipate { arg prob = 0.7, offset = 0.5;
 		^this.collect{ |b|
 			if (prob.coin) {
 				b
 			} {
-				var o = offset.value; [-1 * o, 0] + b
+				var o = offset.value; [-1.p * o, 0] + b
 			}
 		}.flatten
 	}
@@ -479,6 +489,12 @@ Emphasis {
 		} {
 			Error("Ziva needs to be installed to use '<->' -- use: Quarks.install(\"https://github.com/loopier/ziva/\")").throw;
 		}
+	}
+
+	// allow quick definition and playing of parallel Tdefs
+	tplay { arg func;
+		Tdef(this).clear;
+		^Tdef(this, func).play;
 	}
 }
 

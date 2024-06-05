@@ -9,7 +9,7 @@ BacalaoParser {
 	classvar numberInt;
 	const unsignedFloat = "(?:(?:[0-9]+)?\\.)?[0-9]+";
 	const nonArraySpace = "[^[:space:]\\][]+";
-	const elemWithoutMods = "[^[:space:]\\][@*!]+";
+	const elemWithoutMods = "[^[:space:]\\][@*!?]+";
 	const balancedAngleBracket = "(<((?>[^><]|(?1))*)>)";
 	const chord = "<([^>< ]+)>";
 	classvar <reCharEventsPerBar;
@@ -43,17 +43,17 @@ BacalaoParser {
 		unsignedIntOrBjork = unsignedInt ++ "|\\(x?" ++ unsignedInt ++ "," ++ unsignedInt ++ "(?:," ++ numberInt ++ ")?\\)";
 		reCharEventsPerBar = "^(" ++ unsignedInt ++ ")@";
 		numberFloat = "-?" ++ unsignedFloat;
-		// elemModifiers must be in the correct order (optional repeat, then optional hold, then optional duplicate)
-		elemModifiers = "(?:\\*(" ++ unsignedIntOrBjork ++ "))?(?:@(" ++ unsignedFloat ++ "))?(?:!(" ++ unsignedIntOrBjork ++ "))?";
-		// [ overallMatch, balancedArray, arrayRepeat, arrayHold, arrayDuplicate ]
+		// elemModifiers must be in the correct order (optional probability, then repeat, then hold, then duplicate)
+		elemModifiers = "(?:\\?(" ++ unsignedInt ++ "))?(?:\\*(" ++ unsignedIntOrBjork ++ "))?(?:@(" ++ unsignedFloat ++ "))?(?:!(" ++ unsignedIntOrBjork ++ "))?";
+		// [ overallMatch, balancedArray, arrayProb, arrayRepeat, arrayHold, arrayDuplicate ]
 		balancedArray = "(?:(" ++ "\\[(?>[^][]|(?1))*\\])" ++ elemModifiers ++ ")";
 		number = "(?:" ++ numberFloat ++ ")|(?:" ++ rest ++ ")";
 		numberWithMods = "(?:(" ++ number ++ ")" ++ elemModifiers ++ ")";
 		labelWithMods = "(?:(" ++ label ++ ")" ++ elemModifiers ++ ")";
 		elemWithMods = "(?:(" ++ elemWithoutMods ++ ")" ++ elemModifiers ++ ")";
-		// [ overallMatch, simpleElem, arrayElem, arrayRepeat, arrayHold, arrayDuplicate, unrecognized ]
+		// [ overallMatch, simpleElem, arrayElem, arrayProb, arrayRepeat, arrayHold, arrayDuplicate, unrecognized ]
 		arrayElem = "(" ++ nonArraySpace ++ ")" ++ "|(?:(" ++ "[[](?>[^\][]|(?2))*[\]])" ++ elemModifiers ++ ")|([^[:space:]]+)";
-		// [ overallMatch, num, numRepeat, numHold, numDuplicate, labelElem, labelRepeat, labelHold, labelDuplicate ]
+		// [ overallMatch, num, numProb, numRepeat, numHold, numDuplicate, labelElem, labelProb, labelRepeat, labelHold, labelDuplicate ]
 		simpleElemPartial = "(?:(?:" ++ numberWithMods ++ ")|(?:" ++ labelWithMods ++ "))";
 		// [ overallMatch, elem, repeat, hold, duplicate ]
 		simpleElem = "^(?:" ++ elemWithMods ++ ")$";
@@ -76,7 +76,7 @@ BacalaoParser {
 			oct: \octave,
 			sca: \scale,
 			scl: \scale,
-			sus: \sustain,
+			// sus: \sustain,
 			vel: \velocity,
 			slow: \stretch,
 			str: \stretch,
@@ -279,14 +279,15 @@ BacalaoParser {
 			alternateElements = alternateElements.collect{ arg elem;
 				var elemMatch = this.findSimpleElem(elem);
 				if (elemMatch.size == 1) {
-					var full, elem, repeat, hold, dupl;
-					if (elemMatch[0].size != 5) {
+					var full, elem, prob, repeat, hold, dupl;
+					if (elemMatch[0].size != 6) {
 						Error("Unexpected match size: %".format(elemMatch[0])).throw
 					};
-					#full, elem, repeat, hold, dupl = elemMatch[0];
+					#full, elem, prob, repeat, hold, dupl = elemMatch[0];
 					if (elem.isEmpty) {
 						Error("There is no array element: %".format(full)).throw
 					};
+					// @todo Handle prob
 					repeat = if (repeat.isEmpty) { 1 } { repeat.asInteger };
 					hold = if (hold.isEmpty) { 1 } { hold.asFloat };
 					// Note: we don't support Bjorklund e.g. (3,8) inside angle brackets
@@ -682,15 +683,15 @@ BacalaoParser {
 	}
 
 	*findBalancedArray { arg str, offset=0;
-		^(str.findRegexp(balancedArray, offset).flop[1] ?? #[]).clump(5)
+		^(str.findRegexp(balancedArray, offset).flop[1] ?? #[]).clump(6)
 	}
 
 	*findArrayElem { arg str, offset=0;
-		^(str.findRegexp(arrayElem, offset).flop[1] ?? #[]).clump(7)
+		^(str.findRegexp(arrayElem, offset).flop[1] ?? #[]).clump(8)
 	}
 
 	*findSimpleElem { arg str, offset=0;
-		^(str.findRegexp(simpleElem, offset).flop[1] ?? #[]).clump(5)
+		^(str.findRegexp(simpleElem, offset).flop[1] ?? #[]).clump(6)
 	}
 
 	*findWord { arg str, offset=0;
@@ -793,6 +794,7 @@ BacalaoParser {
 	//
 	//   [ ] pattern grouping
 	//   ~ rest
+	//   ? probability pattern (with optional percentage, defaults to 50 if not specified) @todo Not implemented!
 	//   * repeat pattern
 	//   @ hold/elongate a pattern with duration
 	//   ! replicate/duplicate a pattern
@@ -820,26 +822,28 @@ BacalaoParser {
 		var arr = [];
 		var arrItems = this.findArrayElem(str);
 		arrItems.do{ |item|
-			var full, elem, subArr, subArrRepeat, subArrHold, subArrDupl, invalidElem;
+			var full, elem, subArr, subArrProb, subArrRepeat, subArrHold, subArrDupl, invalidElem;
 			// item.debug("item");
-			#full, elem, subArr, subArrRepeat, subArrHold, subArrDupl, invalidElem = item;
+			#full, elem, subArr, subArrProb, subArrRepeat, subArrHold, subArrDupl, invalidElem = item;
 			// elem.debug("elem");
 			if (elem.notEmpty) {
 				var elemMatch = this.findSimpleElem(elem);
 				// elemMatch.debug("elemMatch");
 				if (elemMatch.size == 1) {
-					var full, elem, repeat, hold, dupl;
-					if (elemMatch[0].size != 5) {
+					var full, elem, prob, repeat, hold, dupl;
+					if (elemMatch[0].size != 6) {
 						Error("Unexpected match size: %".format(elemMatch[0])).throw
 					};
-					#full, elem, repeat, hold, dupl = elemMatch[0];
+					#full, elem, prob, repeat, hold, dupl = elemMatch[0];
 					if (elem.isEmpty) {
 						Error("There is no array element: %".format(full)).throw
 					};
+					prob = if (prob.isEmpty) { 1 } { prob.asInteger.clip(0, 100) / 100 };
 					repeat = this.prGetRepeatsArray(repeat);
 					hold = if (hold.isEmpty) { 1 } { hold.asFloat };
 					dupl = this.prGetRepeatsArray(dupl);
 					// "Adding a result: %".format(elem).postln;
+					// @todo elem = if (prob < 1) { "Pif(%.coin, %, Rest())".format(prob, elem) } { elem };
 					if (repeat != #[1]) {
 						elem = repeat.collect{ arg r; if (r.isRest) { "Rest()" }{ elem } -> r.value };
 					};
@@ -850,6 +854,7 @@ BacalaoParser {
 					Error("Invalid array entry: %".format(elem.cs)).throw;
 				}
 			} {
+				var prob = if (subArrProb.isEmpty) { 1 } { subArrProb.asInteger.clip(0, 100) / 100 };
 				var repeat = this.prGetRepeatsArray(subArrRepeat);
 				var hold = if (subArrHold.isEmpty) { 1 } { subArrHold.asFloat };
 				var dupl = this.prGetRepeatsArray(subArrDupl);
@@ -857,6 +862,7 @@ BacalaoParser {
 				subArr = subArr.drop(1).drop(-1); // get rid of outer brackets
 				// if (verbose) { "Will parseArray recursively on %".format(subArr).postln };
 				subArrResult = this.parseArray(subArr);
+				// @todo subArrResult = if (prob < 1) { "Pif(%.coin, %, Rest())".format(prob, subArrResult) } { subArrResult };
 				if (repeat != #[1]) {
 					subArrResult = repeat.collect{ arg r; if (r.isRest) { "Rest()" }{ subArrResult } -> r.value };
 				};

@@ -94,6 +94,9 @@ Bfx {
 		if (clk.respondsTo(\clock)) {
 			clk = clk.clock;
 		};
+		if (clk.isNil) {
+			clk = TempoClock.default;
+		};
 		if (clk.isKindOf(TempoClock).not) {
 			Error("Bfx.% requires a TempoClock".format(methodName)).throw
 		};
