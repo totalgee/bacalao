@@ -17,6 +17,7 @@ Bacalao {
 	var <spatial; // Settings for spatialization (BacalaoSpatialSettings)
 	var <outputGroup; // The Group for the "output fx" Proxy
 	var <barClock; // A clock derived from the main clock, one beat per bar (so we can schedule bar-length patterns without stretching)
+	var <midi; // The MIDIOut port
 
 	*initClass {
 		parse = BacalaoParser;
@@ -422,6 +423,24 @@ Bacalao {
 		}
 	}
 
+	// Set up a USB-connected Synth (audio interface) as Server and also for MIDI
+	// Examples: Roland "S-1", Dirtywave "M8"
+	midiInit { arg name, type = "DirectSound", channels = 2;
+		server.options.inDevice = ServerOptions.inDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
+		server.options.outDevice = ServerOptions.outDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
+		server.options.numInputBusChannels = channels;
+		server.options.numOutputBusChannels = channels;
+
+		if (MIDIClient.initialized == false) {
+			MIDIClient.init;
+		};
+		// MIDIClient.sources.debug("MIDI Sources");
+		MIDIClient.destinations.collect("\n  " + _).debug("MIDI Destinations");
+		midi = MIDIOut.newByName(name, name);
+		midi.latency = server.latency; // should already be true
+		[midi.port, midi.uid].debug("Chose MIDIOut [port, uid]");
+	}
+
 	boot {
 		server.boot;
 	}
@@ -777,6 +796,28 @@ Bacalao {
 			this.prChangePattern(trkName, slot, pattern, dur, quant, role, includeMask);
 		} {
 			this.prSetSource(trkName, slot, pattern, quant);
+		};
+	}
+
+	m { arg trkName, pattern, chan = 2, dur, quant;
+		var slot;
+		if (trkName.isKindOf(Association)) {
+			#trkName, slot = [trkName.key.asSymbol, trkName.value];
+		};
+		if (pattern.isKindOf(Pattern) and: { midi.isKindOf(MIDIOut) }) {
+			var midiPattern = [type: \midi, \midiout, midi, \midicmd, \noteOn, chan: chan, lag: Pfunc{ server.latency * clock.tempo }].pb;
+			if (dur.isNil) {
+				pattern.getDur.debug("pattern duration");
+				// If we have a very long pattern, we don't want to set the
+				// quant to be that long by default, because it will take
+				// too long for the new pattern to take effect, so just use
+				// the default "natural" loop time.
+				// (Tried things like: dur = dur.round.asInt.factors.minItem)
+				dur = 0;
+			};
+			this.prChangePattern(trkName, slot, pattern <> midiPattern, dur, quant, nil, false);
+		} {
+			Error("Bacalao.m expected a Pattern, and to have MIDI setup").throw;
 		};
 	}
 

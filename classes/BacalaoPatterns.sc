@@ -449,9 +449,14 @@ Emphasis {
 +String {
 
 	bparse { arg key, repeats = 1, optVariableName;
-		var pairs;
+		var pattern, pairs;
 		optVariableName = optVariableName ? "";
-		pairs = BacalaoParser.prReplaceStringPattern(key, optVariableName, this).interpret.patternpairs;
+		pattern = BacalaoParser.prReplaceStringPattern(key, optVariableName, this).interpret;
+		if (key.asSymbol == '@' and: { pattern.isKindOf(Pchain) }) {
+			// Handle Event keys @~dict (with "dict" in optVariableName)
+			^Pn(pattern, repeats)
+		};
+		pairs = pattern.patternpairs;
 		^Pbind(*pairs.clump(2).collect{ arg elem;
 			var key, value;
 			#key, value = elem;
