@@ -143,7 +143,7 @@
 			OffsetOut.ar(out, sig * env * amp);
 		}).add;
 
-		SynthDef(\saw, { arg out = 0, freq = 440, amp = 0.1, pan = 0.0, gate = 1;
+		SynthDef(\saw, { arg out = 0, amp = 0.1, pan = 0.0, gate = 1;
 			var n = 4;
 			var att = \att.ir(0.01);
 			var dec = \dec.ir(0.3); // decayTime
@@ -155,6 +155,9 @@
 			var lpf = \lpf.kr(14000);
 			var lpq = \lpq.kr(1);
 
+			var lag = 0.1;
+			var freqLag = \freqLag.kr(lag * 2);
+			var freq = \freq.kr(440, freqLag);
 			var sig = Splay.ar(SawDPW.ar(freq * Rand(0.995, 1.005!n) * Line.kr(1, pitchShift.midiratio, shiftTime), Rand(-1.0, 1.0!n)), 0.3, 1, pan) * -3.dbamp;
 			var env = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: Done.freeSelf);
 			sig = BLowPass.ar(sig, lpf, lpq);
@@ -162,7 +165,7 @@
 			OffsetOut.ar(out, sig * env * amp);
 		}).add;
 
-		SynthDef(\square, { arg out = 0, freq = 440, amp = 0.1, pan = 0.0, gate = 1;
+		SynthDef(\square, { arg out = 0, amp = 0.1, pan = 0.0, gate = 1;
 			var n = 4;
 			var att = \att.ir(0.01);
 			var dec = \dec.ir(0.3); // decayTime
@@ -177,6 +180,9 @@
 			var lpf = \lpf.kr(14000);
 			var lpq = \lpq.kr(1);
 
+			var lag = 0.1;
+			var freqLag = \freqLag.kr(lag * 2);
+			var freq = \freq.kr(440, freqLag);
 			var sig = Splay.ar(PulseDPW.ar(freq * Rand(0.995, 1.005!n) * Line.kr(1, pitchShift.midiratio, shiftTime), pulseWidth), 0.3, 1, pan) * -3.dbamp;
 			var env = EnvGen.kr(Env.adsr(att, dec, sus, rel), gate, doneAction: Done.freeSelf);
 			sig = BLowPass.ar(sig, lpf, lpq);

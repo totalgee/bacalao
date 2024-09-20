@@ -425,9 +425,15 @@ Bacalao {
 
 	// Set up a USB-connected Synth (audio interface) as Server and also for MIDI
 	// Examples: Roland "S-1", Dirtywave "M8"
-	midiInit { arg name, type = "DirectSound", channels = 2;
-		server.options.inDevice = ServerOptions.inDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
-		server.options.outDevice = ServerOptions.outDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
+	midiInit { arg name, portName, type = "DirectSound", channels = 2;
+		Platform.case(
+			\osx, { },
+			\linux, { },
+			\windows, {
+				server.options.inDevice = ServerOptions.inDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
+				server.options.outDevice = ServerOptions.outDevices.select{ arg d; d.contains(name) and: { d.contains(type) } }.first;
+			}
+		);
 		server.options.numInputBusChannels = channels;
 		server.options.numOutputBusChannels = channels;
 
@@ -436,7 +442,14 @@ Bacalao {
 		};
 		// MIDIClient.sources.debug("MIDI Sources");
 		MIDIClient.destinations.collect("\n  " + _).debug("MIDI Destinations");
-		midi = MIDIOut.newByName(name, name);
+		if (name.isNil) {
+			midi = MIDIOut(0);
+		} {
+			midi = MIDIOut.newByName(name, portName ? name);
+		};
+		if (thisProcess.platform.name == \linux) {
+			midi.connect(1);
+		};
 		midi.latency = server.latency; // should already be true
 		[midi.port, midi.uid].debug("Chose MIDIOut [port, uid]");
 	}
@@ -805,7 +818,10 @@ Bacalao {
 			#trkName, slot = [trkName.key.asSymbol, trkName.value];
 		};
 		if (pattern.isKindOf(Pattern) and: { midi.isKindOf(MIDIOut) }) {
-			var midiPattern = [type: \midi, \midiout, midi, \midicmd, \noteOn, chan: chan, lag: Pfunc{ server.latency * clock.tempo }].pb;
+			var midiPattern = (
+				[type: \midi, \midiout, midi, \midicmd, \noteOn, chan: chan]
+				++ Platform.case(\windows, { [lag: Pfunc{ server.latency * clock.tempo }] }, nil)
+			).pb;
 			if (dur.isNil) {
 				pattern.getDur.debug("pattern duration");
 				// If we have a very long pattern, we don't want to set the
@@ -819,6 +835,12 @@ Bacalao {
 		} {
 			Error("Bacalao.m expected a Pattern, and to have MIDI setup").throw;
 		};
+	}
+
+	// allow quick definition and playing of parallel Tdefs on the "bar clock"
+	tp { arg taskName, func, quant = 1;
+		Tdef(taskName).clear;
+		^Tdef(taskName, func).play(barClock, quant: quant)
 	}
 
 	prGetControlValue { arg proxy, controlName;
@@ -1553,7 +1575,7 @@ Bacalao {
 			// We set default mask 1 so we can use it for triggering with pset
 			// (goes to 0/Rest when using PmaskBjork or degrade).
 			if (includeMask) {
-				pattern = pattern << Pbind(\mask, 1);
+				pattern = pattern <> (mask: 1);
 			};
 			if (defaultDict.notEmpty) {
 				pattern = pattern <> defaultDict;

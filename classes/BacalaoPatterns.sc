@@ -306,7 +306,13 @@ Emphasis {
 			^aNumber.performBinaryOpOnEmphasis('/', this)
 		}
 	}
-	// mod
+	mod { arg aNumber, adverb;
+		if (aNumber.isKindOf(Emphasis)) {
+			^Emphasis.new(value mod: aNumber.value, max(emphasis, aNumber.emphasis));
+		} {
+			^aNumber.performBinaryOpOnEmphasis('mod', this)
+		}
+	}
 	// div
 	// pow
 
