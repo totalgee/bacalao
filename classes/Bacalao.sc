@@ -1033,7 +1033,7 @@ Bacalao {
 	// Add a filter (needs array index > 0) to modify the NodeProxy
 	// e.g. b.fx(\drum -> 3, { arg in; JPverb.ar(in, 3) }, 0.3);
 	// You can clear fx in a slot with: b.fx(\drum -> 3);
-	fx { arg trkNameAndIndex, filterFunc, wet=1;
+	prFx { arg trkNameAndIndex, filterFunc, proxyRole, wet=1;
 		var trkName, index;
 		if (trkNameAndIndex.isKindOf(Association).not) {
 			"trkName and index should be an Association, e.g: b.fx(\\drum -> 10, ...)".error;
@@ -1051,13 +1051,21 @@ Bacalao {
 				// Start the thing quiet initially, set the wet at the next quant
 				np.set(wetParam, 0);
 			};
-			np[index] = filterFunc !? {\filter -> filterFunc};
+			np[index] = filterFunc !? {proxyRole -> filterFunc};
 			this.sched({
 				np.set(wetParam, wet);
 			}, 1);
 		} {
 			"fx index should be an integer greater than 0...skipping".warn;
 		}
+	}
+
+	fx { arg trkNameAndIndex, filterFunc, wet=1;
+		^this.prFx(trkNameAndIndex, filterFunc, \filter, wet);
+	}
+
+	fxIn { arg trkNameAndIndex, filterFunc, wet=1;
+		^this.prFx(trkNameAndIndex, filterFunc, \filterIn, wet);
 	}
 
 	fxClear { arg trkName, fadeTime = 1;
