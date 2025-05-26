@@ -211,10 +211,25 @@
 			Out.ar(out, sig * amp);
 		}).add;
 
+		SynthDef(\gd303, { arg out=0, gate=1;
+			var lag = 0.1;
+			var att = \att.kr(0.01, lag);
+			var rel = \rel.kr(0.1, lag);
+			var freq = \freq.kr(110, lag);
+			var amp = \amp.kr(0.5);
+			var lpf = \lpf.kr(440, lag);
+			var res = \res.kr(0.7);
+				var sig = PulseDPW.ar(freq + Rand(0.995, 1.005!2), 0.5, 0.7) ++ SinOscFB.ar(freq/2 * Rand(0.99,1.01!3), 1, 0.7);
+			var env = Env.adsr(att, 0.1, 0.5, rel).ar(Done.freeSelf, gate);
+			sig = Splay.ar(sig, 0.25, 1, \pan.kr(0));
+			sig = DFM1.ar(sig, lpf, res, 0.7, 0, 0.0003, 0.7).distort;
+			OffsetOut.ar(out, sig * env * amp);
+		}).add;
+
 		SynthDef(\pluck, { arg out=0, freq=440, amp=0.1, pan=0;
 			var n = 2;
 			var inp = LFClipNoise.ar(2000!n, 0.7) * Env.perc(0.005, 0.05).ar * amp;
-			var sig = DWGPlucked.ar(freq * Rand(0.995,1.005!n), amp, 1, Rand(0.1, 0.9!n), amp.expexp(0.01,1, 30,0.3), LFDNoise1.kr(0.27!n).exprange(15,150), inp) * amp;
+			var sig = DWGPlucked.ar(freq * Rand(0.995,1.005!n), amp, 1, Rand(0.1, 0.9!n), amp.expexp(0.01,1, 30,0.3), LFDNoise1.kr(0.27!n).exprange(15,150), inp).distort * amp;
 			DetectSilence.ar(sig, 0.001, doneAction: Done.freeSelf);
 			OffsetOut.ar(out, Splay.ar(sig, 0.25, center: pan));
 		}).add;

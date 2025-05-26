@@ -190,7 +190,7 @@ Bfx {
 	*distortCross { arg crossAmp = 0.5, crossSmooth = 0.5;
 		^{ arg in;
 			var amp = \crossAmp.kr(crossAmp, 0.1);
-			var smooth = \crossSmooth.kr(crossSmooth, 0.1);
+			var smooth = \crossSmooth.kr(crossSmooth, 0.1).max(0.01);
 			CrossoverDistortion.ar(in, amp, smooth)
 		}
 	}
@@ -254,6 +254,23 @@ Bfx {
 		}
 	}
 
+	*freqShift { arg shiftFreq = 0, shiftPhase = 0;
+		^{ arg in;
+			var freq = \shiftFreq.kr(shiftFreq, 0.1);
+			var phase = \shiftPhase.kr(shiftPhase, 0.1);
+			in + FreqShift.ar(in, freq, phase);
+		}
+	}
+
+	// Nice effect that sounds similar to a "stereo fattener"
+	*phaseShift { arg phaseFreq = 0.5, phasePhase = #[0, pi];
+		^{ arg in;
+			var freq = \phaseFreq.kr(phaseFreq, 0.1);
+			var phase = \phasePhase.kr(phasePhase, 0.1);
+			in + FreqShift.ar(in, 0, SinOsc.kr(freq, phase).range(0, pi));
+		}
+	}
+
 	*tremolo { arg tremRate = 7.0, tremDepth = 0.5;
 		^{ arg in;
 			var rate = \tremRate.kr(tremRate, 0.1);
@@ -272,7 +289,7 @@ Bfx {
 		}
 	}
 
-	*flange { arg flanRate = 0.1, flanDepth = 0.5, flanFb = 0.1;
+	*flange { arg flanRate = 0.1, flanDepth = 0.5, flanFb = 0.5;
 		^{ arg in;
 			var rate = \flanRate.kr(flanRate, 0.1);
 			var depth = \flanDepth.kr(flanDepth, 0.1).clip(0, 1);

@@ -1,7 +1,7 @@
 Bacalao {
 	classvar parse;
 	const numVstChannels = 2;
-	const defaultVstPath = "C:/Program Files/Common Files/VST2";
+	const defaultVstPath = #["C:/Program Files/Common Files/VST2" /*, "C:/Program Files/Common Files/VST3"*/ ];
 	classvar <preProcessorVariables = 'bacalaoPreProcessorVariables';
 	var <clock;
 	var <server;
@@ -244,12 +244,14 @@ Bacalao {
 
 		SynthDef(\sample2, { arg out=0, amp=0.1, pan=0;
 			var sig = playFunc.(2, /* withGate */ false);
-			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
+			//Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
+			Out.ar(out, Splay.ar(sig, 0.4, amp, pan));
 		}).add;
 
 		SynthDef(\sample2_gate, { arg out=0, amp=0.1, pan=0;
 			var sig = playFunc.(2, /* withGate */ true);
-			Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
+			//Out.ar(out, Balance2.ar(sig.first, sig.last, pan, amp));
+			Out.ar(out, Splay.ar(sig, 0.4, amp, pan));
 		}).add;
 
 		this.prSetupInstrumentSynths;
@@ -554,7 +556,7 @@ Bacalao {
 				"Adding to ~samp key: '%'".format(name).postln
 			}
 		};
-		bufs = (dirPath ++ "/*.wav").pathMatch.collect{ arg path;
+		bufs = ((dirPath ++ "/*.wav").pathMatch ++ (dirPath ++ "/*.flac").pathMatch).collect{ arg path;
 			Buffer.read(server, path, action: { arg buf;
 				"index %: loaded %".format(dict[name].size, buf).postln;
 				dict[name] = dict[name].add(
@@ -833,7 +835,11 @@ Bacalao {
 			};
 			this.prChangePattern(trkName, slot, pattern <> midiPattern, dur, quant, nil, false);
 		} {
-			Error("Bacalao.m expected a Pattern, and to have MIDI setup").throw;
+			if (pattern.isNil) {
+				this.prSetSource(trkName, slot, pattern, quant);
+			} {
+				Error("Bacalao.m expected a Pattern, and to have MIDI setup").throw;
+			}
 		};
 	}
 
